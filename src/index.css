@@ -17,7 +17,19 @@
   --color-text: #1a1a1a;
   --color-text-muted: #6b7280;
   --color-border: #e5e7eb;
-  --color-accent: #4f46e5;
+  --color-accent: #2563eb;
+  --color-accent-fg: #ffffff;
+  --color-focus: #2563eb;
+  --color-priority-high-bg: #fee2e2;
+  --color-priority-high-fg: #991b1b;
+  --color-priority-medium-bg: #fef3c7;
+  --color-priority-medium-fg: #92400e;
+  --color-priority-low-bg: #e5e7eb;
+  --color-priority-low-fg: #374151;
+  --color-status-overdue: #dc2626;
+  --color-progress-track: #e5e7eb;
+  --color-disabled-bg: #f3f4f6;
+  --color-disabled-fg: #9ca3af;
 }
 
 .dark {
@@ -26,7 +38,19 @@
   --color-text: #f4f4f5;
   --color-text-muted: #a1a1aa;
   --color-border: #3f3f46;
-  --color-accent: #818cf8;
+  --color-accent: #60a5fa;
+  --color-accent-fg: #0b1220;
+  --color-focus: #60a5fa;
+  --color-priority-high-bg: #3f1d1d;
+  --color-priority-high-fg: #fecaca;
+  --color-priority-medium-bg: #3a2f12;
+  --color-priority-medium-fg: #fde68a;
+  --color-priority-low-bg: #2c2c31;
+  --color-priority-low-fg: #d1d5db;
+  --color-status-overdue: #f87171;
+  --color-progress-track: #3f3f46;
+  --color-disabled-bg: #27272a;
+  --color-disabled-fg: #6b7280;
 }
 
 /* Expose the tokens to Tailwind so they become utilities (bg-bg, text-text, ...). */
@@ -37,4 +61,16 @@
   --color-text-muted: var(--color-text-muted);
   --color-border: var(--color-border);
   --color-accent: var(--color-accent);
+  --color-accent-fg: var(--color-accent-fg);
+  --color-focus: var(--color-focus);
+  --color-priority-high-bg: var(--color-priority-high-bg);
+  --color-priority-high-fg: var(--color-priority-high-fg);
+  --color-priority-medium-bg: var(--color-priority-medium-bg);
+  --color-priority-medium-fg: var(--color-priority-medium-fg);
+  --color-priority-low-bg: var(--color-priority-low-bg);
+  --color-priority-low-fg: var(--color-priority-low-fg);
+  --color-status-overdue: var(--color-status-overdue);
+  --color-progress-track: var(--color-progress-track);
+  --color-disabled-bg: var(--color-disabled-bg);
+  --color-disabled-fg: var(--color-disabled-fg);
 }

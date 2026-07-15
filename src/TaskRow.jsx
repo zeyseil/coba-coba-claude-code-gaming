@@ -1,6 +1,18 @@
 import { useState } from "react";
 import { getTaskStatus } from "./lib/taskStatus";
 import { toISODeadline, fromISODeadline } from "./lib/deadline";
+import Button from "./Button";
+
+// Static value->className map for the priority badge. Presentation only; the
+// stored priority string is unchanged.
+const PRIORITY_BADGE = {
+  high: "bg-priority-high-bg text-priority-high-fg",
+  medium: "bg-priority-medium-bg text-priority-medium-fg",
+  low: "bg-priority-low-bg text-priority-low-fg",
+};
+
+const FIELD =
+  "rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
 
 // One task row. Owns only its local edit state; the task list and all storage
 // mutations live in App. onUpdate returns true on success so the row knows
@@ -52,18 +64,24 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
   const status = getTaskStatus(task, now);
 
   return (
-    <li>
+    <li className="flex flex-wrap items-center gap-3 px-4 py-3">
       <input
         type="checkbox"
         checked={task.completed}
         onChange={() => onUpdate(task.id, { completed: !task.completed })}
+        className="[accent-color:var(--color-accent)]"
       />
       {isEditing ? (
-        <form onSubmit={save}>
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} />
+        <form onSubmit={save} className="flex flex-wrap items-center gap-3">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className={FIELD}
+          />
           <select
             value={draftPriority}
             onChange={(e) => setDraftPriority(e.target.value)}
+            className={FIELD}
           >
             <option value="high">high</option>
             <option value="medium">medium</option>
@@ -73,11 +91,13 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
             type="date"
             value={draftDate}
             onChange={(e) => setDraftDate(e.target.value)}
+            className={FIELD}
           />
           <input
             type="time"
             value={draftTime}
             onChange={(e) => setDraftTime(e.target.value)}
+            className={FIELD}
           />
           <input
             type="text"
@@ -91,35 +111,64 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
               }
             }}
             placeholder="New tag"
+            className={FIELD}
           />
-          <button type="button" onClick={addDraftTag}>
+          <Button type="button" variant="secondary" onClick={addDraftTag}>
             Add tag
-          </button>
+          </Button>
           {draftTags.map((tag, i) => (
-            <span key={i}>
+            <span
+              key={i}
+              className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-text-muted"
+            >
               {tag}
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={() => setDraftTags(draftTags.filter((_, j) => j !== i))}
               >
                 x
-              </button>
+              </Button>
             </span>
           ))}
-          <button type="submit">Save</button>
-          <button type="button" onClick={cancel}>
+          <Button type="submit" variant="primary">
+            Save
+          </Button>
+          <Button type="button" variant="secondary" onClick={cancel}>
             Cancel
-          </button>
+          </Button>
         </form>
       ) : (
         <>
-          <span onClick={startEdit}>{task.title}</span>
-          <span> {task.priority} </span>
-          <span> {status} </span>
+          <span
+            onClick={startEdit}
+            className={`flex-1 cursor-pointer text-sm text-text ${
+              task.completed ? "line-through text-text-muted" : ""
+            }`}
+          >
+            {task.title}
+          </span>
+          <span
+            className={`inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-medium capitalize ${PRIORITY_BADGE[task.priority]}`}
+          >
+            {task.priority}
+          </span>
+          {status === "overdue" && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-status-overdue">
+              ⚠ Overdue
+            </span>
+          )}
           {task.tags.map((tag) => (
-            <span key={tag}> {tag} </span>
+            <span
+              key={tag}
+              className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-text-muted"
+            >
+              {tag}
+            </span>
           ))}
-          <button onClick={() => onDelete(task.id)}>Delete</button>
+          <Button variant="danger" onClick={() => onDelete(task.id)}>
+            Delete
+          </Button>
         </>
       )}
     </li>
