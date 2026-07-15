@@ -6,6 +6,7 @@ import { useTheme } from "./useTheme";
 import { getTasks, createTask, updateTask, deleteTask } from "./lib/storage";
 import { toISODeadline } from "./lib/deadline";
 import { getVisibleTasks } from "./lib/getVisibleTasks";
+import Button from "./Button";
 
 export default function App() {
   const { theme, toggle } = useTheme();
@@ -131,16 +132,21 @@ export default function App() {
         <ThemeToggle theme={theme} onToggle={toggle} />
       </header>
 
-      <main>
-        <form onSubmit={handleAdd}>
+      <main className="mx-auto max-w-3xl px-4 pb-16 space-y-6">
+        <form
+          onSubmit={handleAdd}
+          className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-4"
+        >
           <input
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="New task"
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
           <select
             value={newPriority}
             onChange={(e) => setNewPriority(e.target.value)}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             <option value="high">high</option>
             <option value="medium">medium</option>
@@ -150,11 +156,13 @@ export default function App() {
             type="date"
             value={newDate}
             onChange={(e) => setNewDate(e.target.value)}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
           <input
             type="time"
             value={newTime}
             onChange={(e) => setNewTime(e.target.value)}
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
           <input
             type="text"
@@ -168,25 +176,32 @@ export default function App() {
               }
             }}
             placeholder="New tag"
+            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
-          <button type="button" onClick={addNewTag}>
+          <Button type="button" variant="secondary" onClick={addNewTag}>
             Add tag
-          </button>
+          </Button>
           {newTags.map((tag, i) => (
-            <span key={i}>
+            <span
+              key={i}
+              className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-text-muted"
+            >
               {tag}
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={() => setNewTags(newTags.filter((_, j) => j !== i))}
               >
                 x
-              </button>
+              </Button>
             </span>
           ))}
-          <button type="submit">Add</button>
+          <Button type="submit" variant="primary">
+            Add
+          </Button>
         </form>
 
-        {error && <p>{error}</p>}
+        {error && <p className="text-sm text-status-overdue">{error}</p>}
 
         <FilterControls
           filters={filters}
@@ -195,26 +210,37 @@ export default function App() {
         />
 
         {/* Progress bar: always rendered, always from ALL tasks. Native
-            <progress>, no styling (that's the styling session). */}
-        <progress value={progress} max={1} />
-        <span>{Math.floor(progress * 100)}%</span>
+            <progress>, styled with utilities only (track + size); the fill
+            follows accent-color. */}
+        <div className="flex items-center gap-3">
+          <progress
+            value={progress}
+            max={1}
+            className="h-2 w-full appearance-none rounded-lg bg-progress-track [accent-color:var(--color-accent)]"
+          />
+          <span className="text-sm tabular-nums text-text-muted">
+            {Math.floor(progress * 100)}%
+          </span>
+        </div>
 
         {/* Status line, separate from the progress bar. Single source of the
             loading / no-tasks / showing-count status. */}
         {tasks === null ? (
-          <p>Loading tasks...</p>
+          <p className="text-sm text-text-muted">Loading tasks...</p>
         ) : total === 0 ? (
-          <p>No tasks yet.</p>
+          <p className="text-sm text-text-muted">No tasks yet.</p>
         ) : filterActive ? (
-          <p>
+          <p className="text-sm text-text-muted">
             Showing {visible.length} of {total} tasks
           </p>
         ) : null}
 
         {visible.length === 0 ? (
-          tasks && total > 0 ? <p>No tasks match your filters</p> : null
+          tasks && total > 0 ? (
+            <p className="text-sm text-text-muted">No tasks match your filters</p>
+          ) : null
         ) : (
-          <ul>
+          <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
             {visible.map((task) => (
               <TaskRow
                 key={task.id}
