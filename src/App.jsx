@@ -42,6 +42,22 @@ export default function App() {
   const taskTags = tasks ? [...new Set(tasks.flatMap((t) => t.tags))] : [];
   const availableTags = [...new Set([...taskTags, ...filters.tags])];
 
+  // Progress is computed from ALL tasks (state `tasks`), never from `visible`.
+  // Filters must not affect the progress bar (spec). Percentage is derived, not
+  // stored on the model.
+  const total = tasks ? tasks.length : 0;
+  const completed = tasks ? tasks.filter((t) => t.completed).length : 0;
+  const progress = total === 0 ? 0 : completed / total; // float 0..1; 0 when empty
+
+  // A filter is active when any dimension deviates from its default. Drives the
+  // "Showing X of Y" status line only.
+  const filterActive =
+    filters.status !== "all" ||
+    filters.priorities.length > 0 ||
+    filters.date !== "any" ||
+    filters.search.trim() !== "" ||
+    filters.tags.length > 0;
+
   function addNewTag() {
     if (newTagInput === "") return;
     setNewTags([...newTags, newTagInput]);
@@ -178,12 +194,25 @@ export default function App() {
           availableTags={availableTags}
         />
 
+        {/* Progress bar: always rendered, always from ALL tasks. Native
+            <progress>, no styling (that's the styling session). */}
+        <progress value={progress} max={1} />
+        <span>{Math.floor(progress * 100)}%</span>
+
+        {/* Status line, separate from the progress bar. Single source of the
+            loading / no-tasks / showing-count status. */}
         {tasks === null ? (
-          <p>Loading…</p>
-        ) : tasks.length === 0 ? (
-          <p>No tasks yet</p>
-        ) : visible.length === 0 ? (
-          <p>No tasks match your filters</p>
+          <p>Loading tasks...</p>
+        ) : total === 0 ? (
+          <p>No tasks yet.</p>
+        ) : filterActive ? (
+          <p>
+            Showing {visible.length} of {total} tasks
+          </p>
+        ) : null}
+
+        {visible.length === 0 ? (
+          tasks && total > 0 ? <p>No tasks match your filters</p> : null
         ) : (
           <ul>
             {visible.map((task) => (
