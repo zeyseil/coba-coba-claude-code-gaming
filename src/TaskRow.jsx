@@ -11,6 +11,8 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
   const [draftPriority, setDraftPriority] = useState("medium");
   const [draftDate, setDraftDate] = useState("");
   const [draftTime, setDraftTime] = useState("");
+  const [draftTags, setDraftTags] = useState([]);
+  const [draftTagInput, setDraftTagInput] = useState("");
 
   function startEdit() {
     const { date, time } = fromISODeadline(task.deadline);
@@ -18,7 +20,15 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
     setDraftPriority(task.priority);
     setDraftDate(date);
     setDraftTime(time);
+    setDraftTags(task.tags);
+    setDraftTagInput("");
     setIsEditing(true);
+  }
+
+  function addDraftTag() {
+    if (draftTagInput === "") return;
+    setDraftTags([...draftTags, draftTagInput]);
+    setDraftTagInput("");
   }
 
   function cancel() {
@@ -34,6 +44,7 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
       title: draft,
       priority: draftPriority,
       deadline: toISODeadline(draftDate, draftTime),
+      tags: draftTags,
     });
     if (ok) setIsEditing(false);
   }
@@ -68,6 +79,33 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
             value={draftTime}
             onChange={(e) => setDraftTime(e.target.value)}
           />
+          <input
+            type="text"
+            value={draftTagInput}
+            onChange={(e) => setDraftTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter adds a tag without submitting the edit form.
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addDraftTag();
+              }
+            }}
+            placeholder="New tag"
+          />
+          <button type="button" onClick={addDraftTag}>
+            Add tag
+          </button>
+          {draftTags.map((tag, i) => (
+            <span key={i}>
+              {tag}
+              <button
+                type="button"
+                onClick={() => setDraftTags(draftTags.filter((_, j) => j !== i))}
+              >
+                x
+              </button>
+            </span>
+          ))}
           <button type="submit">Save</button>
           <button type="button" onClick={cancel}>
             Cancel
@@ -78,6 +116,9 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
           <span onClick={startEdit}>{task.title}</span>
           <span> {task.priority} </span>
           <span> {status} </span>
+          {task.tags.map((tag) => (
+            <span key={tag}> {tag} </span>
+          ))}
           <button onClick={() => onDelete(task.id)}>Delete</button>
         </>
       )}

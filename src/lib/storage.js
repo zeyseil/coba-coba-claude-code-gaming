@@ -51,6 +51,23 @@ function assertValidTitle(title) {
   }
 }
 
+// Normalize tags: trim + lowercase, drop empties (after trim) and duplicates.
+// This is validation, so it lives here — components never normalize tags.
+function normalizeTags(tags) {
+  if (!Array.isArray(tags)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const t of tags) {
+    if (typeof t !== "string") continue;
+    const norm = t.trim().toLowerCase();
+    if (norm === "") continue;
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    out.push(norm);
+  }
+  return out;
+}
+
 // Return all tasks, sorted ascending by `order` (order is the source of truth
 // for sequence; a new task gets the smallest order and shows up on top).
 export async function getTasks() {
@@ -71,7 +88,7 @@ export async function createTask(input) {
     title: input.title.trim(),
     priority: PRIORITIES.includes(input.priority) ? input.priority : "medium",
     deadline: input.deadline ?? null,
-    tags: Array.isArray(input.tags) ? input.tags : [],
+    tags: normalizeTags(input.tags),
     completed: false,
     order: topOrder,
     createdAt: new Date().toISOString(),
@@ -101,6 +118,7 @@ export async function updateTask(id, patch) {
     id: current.id,
     createdAt: current.createdAt,
     title: "title" in patch ? patch.title.trim() : current.title,
+    tags: "tags" in patch ? normalizeTags(patch.tags) : current.tags,
   };
 
   const next = [...tasks];

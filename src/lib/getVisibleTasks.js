@@ -7,7 +7,8 @@ import { getTaskStatus } from "./taskStatus";
 //   { status: "all"|"active"|"completed",
 //     priorities: string[],          // [] means NO restriction (all pass)
 //     date: "any"|"today"|"overdue",
-//     search: string }               // empty/whitespace means NO restriction
+//     search: string,                // empty/whitespace means NO restriction
+//     tags: string[] }               // [] means NO restriction; OR within
 //
 // All dimensions are combined with AND: a task passes only if it passes every
 // dimension. Input order is preserved (Array.filter keeps order); no sorting.
@@ -38,6 +39,15 @@ export function getVisibleTasks(tasks, filters, now) {
 
     // Search (case-insensitive substring on title). Empty = no restriction.
     if (search !== "" && !task.title.toLowerCase().includes(search)) {
+      return false;
+    }
+
+    // Tag (multi). [] = no restriction. OR within the dimension: the task
+    // passes if it has ANY selected tag. Combined with the others via AND.
+    if (
+      filters.tags.length > 0 &&
+      !filters.tags.some((t) => task.tags.includes(t))
+    ) {
       return false;
     }
 
