@@ -19,6 +19,8 @@ export default function App() {
   const [newPriority, setNewPriority] = useState("medium");
   const [newDate, setNewDate] = useState("");
   const [newTime, setNewTime] = useState("");
+  const [newTags, setNewTags] = useState([]);
+  const [newTagInput, setNewTagInput] = useState("");
 
   // Filter state lives here, in the list's parent. The actual filtering is done
   // by getVisibleTasks — never in this component.
@@ -27,11 +29,24 @@ export default function App() {
     priorities: [],
     date: "any",
     search: "",
+    tags: [],
   });
 
   // One instant shared by every row this render; injected into getTaskStatus.
   const now = new Date();
   const visible = tasks ? getVisibleTasks(tasks, filters, now) : [];
+
+  // Tag filter options are DERIVED from existing tasks (union of all task.tags),
+  // plus any currently-selected tag so an orphaned-but-active tag stays
+  // uncheckable. This is option derivation, not filtering.
+  const taskTags = tasks ? [...new Set(tasks.flatMap((t) => t.tags))] : [];
+  const availableTags = [...new Set([...taskTags, ...filters.tags])];
+
+  function addNewTag() {
+    if (newTagInput === "") return;
+    setNewTags([...newTags, newTagInput]);
+    setNewTagInput("");
+  }
 
   async function refresh() {
     try {
@@ -54,11 +69,14 @@ export default function App() {
         title: newTitle,
         priority: newPriority,
         deadline: toISODeadline(newDate, newTime),
+        tags: newTags,
       });
       setNewTitle("");
       setNewPriority("medium");
       setNewDate("");
       setNewTime("");
+      setNewTags([]);
+      setNewTagInput("");
       setError(null);
       await refresh();
     } catch (err) {
@@ -122,12 +140,43 @@ export default function App() {
             value={newTime}
             onChange={(e) => setNewTime(e.target.value)}
           />
+          <input
+            type="text"
+            value={newTagInput}
+            onChange={(e) => setNewTagInput(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter adds a tag without submitting the whole task form.
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addNewTag();
+              }
+            }}
+            placeholder="New tag"
+          />
+          <button type="button" onClick={addNewTag}>
+            Add tag
+          </button>
+          {newTags.map((tag, i) => (
+            <span key={i}>
+              {tag}
+              <button
+                type="button"
+                onClick={() => setNewTags(newTags.filter((_, j) => j !== i))}
+              >
+                x
+              </button>
+            </span>
+          ))}
           <button type="submit">Add</button>
         </form>
 
         {error && <p>{error}</p>}
 
-        <FilterControls filters={filters} onChange={setFilters} />
+        <FilterControls
+          filters={filters}
+          onChange={setFilters}
+          availableTags={availableTags}
+        />
 
         {tasks === null ? (
           <p>Loading…</p>

@@ -8,12 +8,19 @@
 // a text input. You can select Active + High + Today + "react" all at once.
 const PRIORITIES = ["high", "medium", "low"];
 
-export default function FilterControls({ filters, onChange }) {
+export default function FilterControls({ filters, onChange, availableTags }) {
   function togglePriority(priority) {
     const next = filters.priorities.includes(priority)
       ? filters.priorities.filter((p) => p !== priority)
       : [...filters.priorities, priority];
     onChange({ ...filters, priorities: next });
+  }
+
+  function toggleTag(tag) {
+    const next = filters.tags.includes(tag)
+      ? filters.tags.filter((t) => t !== tag)
+      : [...filters.tags, tag];
+    onChange({ ...filters, tags: next });
   }
 
   return (
@@ -60,6 +67,24 @@ export default function FilterControls({ filters, onChange }) {
             {value}
           </label>
         ))}
+      </fieldset>
+
+      <fieldset>
+        <legend>Tags</legend>
+        {availableTags.length === 0 ? (
+          <span>no tags</span>
+        ) : (
+          availableTags.map((tag) => (
+            <label key={tag}>
+              <input
+                type="checkbox"
+                checked={filters.tags.includes(tag)}
+                onChange={() => toggleTag(tag)}
+              />
+              {tag}
+            </label>
+          ))
+        )}
       </fieldset>
 
       <label>
