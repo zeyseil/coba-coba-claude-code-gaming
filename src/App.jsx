@@ -3,6 +3,7 @@ import ThemeToggle from "./ThemeToggle";
 import TaskRow from "./TaskRow";
 import { useTheme } from "./useTheme";
 import { getTasks, createTask, updateTask, deleteTask } from "./lib/storage";
+import { toISODeadline } from "./lib/deadline";
 
 export default function App() {
   const { theme, toggle } = useTheme();
@@ -13,6 +14,12 @@ export default function App() {
   const [tasks, setTasks] = useState(null);
   const [error, setError] = useState(null);
   const [newTitle, setNewTitle] = useState("");
+  const [newPriority, setNewPriority] = useState("medium");
+  const [newDate, setNewDate] = useState("");
+  const [newTime, setNewTime] = useState("");
+
+  // One instant shared by every row this render; injected into getTaskStatus.
+  const now = new Date();
 
   async function refresh() {
     try {
@@ -31,8 +38,15 @@ export default function App() {
     e.preventDefault();
     try {
       // Let storage.js validate the title (empty/whitespace is rejected there).
-      await createTask({ title: newTitle });
+      await createTask({
+        title: newTitle,
+        priority: newPriority,
+        deadline: toISODeadline(newDate, newTime),
+      });
       setNewTitle("");
+      setNewPriority("medium");
+      setNewDate("");
+      setNewTime("");
       setError(null);
       await refresh();
     } catch (err) {
@@ -78,6 +92,24 @@ export default function App() {
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="New task"
           />
+          <select
+            value={newPriority}
+            onChange={(e) => setNewPriority(e.target.value)}
+          >
+            <option value="high">high</option>
+            <option value="medium">medium</option>
+            <option value="low">low</option>
+          </select>
+          <input
+            type="date"
+            value={newDate}
+            onChange={(e) => setNewDate(e.target.value)}
+          />
+          <input
+            type="time"
+            value={newTime}
+            onChange={(e) => setNewTime(e.target.value)}
+          />
           <button type="submit">Add</button>
         </form>
 
@@ -93,6 +125,7 @@ export default function App() {
               <TaskRow
                 key={task.id}
                 task={task}
+                now={now}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
               />
