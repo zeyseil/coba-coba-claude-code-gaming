@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import ThemeToggle from "./ThemeToggle";
+import TaskRow from "./TaskRow";
 import { useTheme } from "./useTheme";
-import { getTasks, createTask, deleteTask } from "./lib/storage";
+import { getTasks, createTask, updateTask, deleteTask } from "./lib/storage";
 
 export default function App() {
   const { theme, toggle } = useTheme();
@@ -36,6 +37,20 @@ export default function App() {
       await refresh();
     } catch (err) {
       setError(String(err?.message ?? err));
+    }
+  }
+
+  // Used for both toggling completed and saving an edited title. Returns true
+  // on success so a row can decide whether to leave edit mode.
+  async function handleUpdate(id, patch) {
+    try {
+      await updateTask(id, patch);
+      setError(null);
+      await refresh();
+      return true;
+    } catch (err) {
+      setError(String(err?.message ?? err));
+      return false;
     }
   }
 
@@ -75,10 +90,12 @@ export default function App() {
         ) : (
           <ul>
             {tasks.map((task) => (
-              <li key={task.id}>
-                {task.title}
-                <button onClick={() => handleDelete(task.id)}>Delete</button>
-              </li>
+              <TaskRow
+                key={task.id}
+                task={task}
+                onUpdate={handleUpdate}
+                onDelete={handleDelete}
+              />
             ))}
           </ul>
         )}
