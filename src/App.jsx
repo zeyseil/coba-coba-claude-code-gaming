@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import ThemeToggle from "./ThemeToggle";
 import TaskRow from "./TaskRow";
+import FilterControls from "./FilterControls";
 import { useTheme } from "./useTheme";
 import { getTasks, createTask, updateTask, deleteTask } from "./lib/storage";
 import { toISODeadline } from "./lib/deadline";
+import { getVisibleTasks } from "./lib/getVisibleTasks";
 
 export default function App() {
   const { theme, toggle } = useTheme();
@@ -18,8 +20,18 @@ export default function App() {
   const [newDate, setNewDate] = useState("");
   const [newTime, setNewTime] = useState("");
 
+  // Filter state lives here, in the list's parent. The actual filtering is done
+  // by getVisibleTasks — never in this component.
+  const [filters, setFilters] = useState({
+    status: "all",
+    priorities: [],
+    date: "any",
+    search: "",
+  });
+
   // One instant shared by every row this render; injected into getTaskStatus.
   const now = new Date();
+  const visible = tasks ? getVisibleTasks(tasks, filters, now) : [];
 
   async function refresh() {
     try {
@@ -115,13 +127,17 @@ export default function App() {
 
         {error && <p>{error}</p>}
 
+        <FilterControls filters={filters} onChange={setFilters} />
+
         {tasks === null ? (
           <p>Loading…</p>
         ) : tasks.length === 0 ? (
           <p>No tasks yet</p>
+        ) : visible.length === 0 ? (
+          <p>No tasks match your filters</p>
         ) : (
           <ul>
-            {tasks.map((task) => (
+            {visible.map((task) => (
               <TaskRow
                 key={task.id}
                 task={task}
