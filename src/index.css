@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+/*
+  Enable the `dark:` variant based on a `.dark` class on <html>, instead of the
+  OS-level prefers-color-scheme. The user's toggle controls this class.
+*/
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Semantic color tokens. Light values live in :root; .dark overrides them.
+  Components must reference these tokens (e.g. bg-bg, text-text) and never
+  hardcode a hex/rgb color.
+*/
+:root {
+  --color-bg: #f7f7f8;
+  --color-surface: #ffffff;
+  --color-text: #1a1a1a;
+  --color-text-muted: #6b7280;
+  --color-border: #e5e7eb;
+  --color-accent: #4f46e5;
+}
+
+.dark {
+  --color-bg: #18181b;
+  --color-surface: #232327;
+  --color-text: #f4f4f5;
+  --color-text-muted: #a1a1aa;
+  --color-border: #3f3f46;
+  --color-accent: #818cf8;
+}
+
+/* Expose the tokens to Tailwind so they become utilities (bg-bg, text-text, ...). */
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-border: var(--color-border);
+  --color-accent: var(--color-accent);
+}
