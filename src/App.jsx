@@ -141,12 +141,12 @@ export default function App() {
             value={newTitle}
             onChange={(e) => setNewTitle(e.target.value)}
             placeholder="New task"
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
           <select
             value={newPriority}
             onChange={(e) => setNewPriority(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             <option value="high">high</option>
             <option value="medium">medium</option>
@@ -156,13 +156,13 @@ export default function App() {
             type="date"
             value={newDate}
             onChange={(e) => setNewDate(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
           <input
             type="time"
             value={newTime}
             onChange={(e) => setNewTime(e.target.value)}
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
           <input
             type="text"
@@ -176,9 +176,14 @@ export default function App() {
               }
             }}
             placeholder="New tag"
-            className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           />
-          <Button type="button" variant="secondary" onClick={addNewTag}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={addNewTag}
+            className="w-full sm:w-auto"
+          >
             Add tag
           </Button>
           {newTags.map((tag, i) => (
@@ -196,7 +201,7 @@ export default function App() {
               </Button>
             </span>
           ))}
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" className="w-full sm:w-auto">
             Add
           </Button>
         </form>
