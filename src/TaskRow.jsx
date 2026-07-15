@@ -12,7 +12,7 @@ const PRIORITY_BADGE = {
 };
 
 const FIELD =
-  "rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
+  "w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus";
 
 // One task row. Owns only its local edit state; the task list and all storage
 // mutations live in App. onUpdate returns true on success so the row knows
@@ -69,10 +69,13 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
         type="checkbox"
         checked={task.completed}
         onChange={() => onUpdate(task.id, { completed: !task.completed })}
-        className="[accent-color:var(--color-accent)]"
+        className="size-5 sm:size-4 [accent-color:var(--color-accent)]"
       />
       {isEditing ? (
-        <form onSubmit={save} className="flex flex-wrap items-center gap-3">
+        <form
+          onSubmit={save}
+          className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center"
+        >
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -113,7 +116,12 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
             placeholder="New tag"
             className={FIELD}
           />
-          <Button type="button" variant="secondary" onClick={addDraftTag}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={addDraftTag}
+            className="w-full sm:w-auto"
+          >
             Add tag
           </Button>
           {draftTags.map((tag, i) => (
@@ -131,10 +139,15 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
               </Button>
             </span>
           ))}
-          <Button type="submit" variant="primary">
+          <Button type="submit" variant="primary" className="w-full sm:w-auto">
             Save
           </Button>
-          <Button type="button" variant="secondary" onClick={cancel}>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={cancel}
+            className="w-full sm:w-auto"
+          >
             Cancel
           </Button>
         </form>
@@ -142,7 +155,7 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
         <>
           <span
             onClick={startEdit}
-            className={`flex-1 cursor-pointer text-sm text-text ${
+            className={`min-w-0 basis-full sm:basis-auto sm:flex-1 cursor-pointer break-words line-clamp-2 text-sm text-text ${
               task.completed ? "line-through text-text-muted" : ""
             }`}
           >

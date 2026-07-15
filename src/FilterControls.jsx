@@ -119,13 +119,13 @@ export default function FilterControls({ filters, onChange, availableTags }) {
         </div>
       </fieldset>
 
-      <label className="inline-flex items-center gap-1.5 text-sm text-text">
+      <label className="flex w-full items-center gap-1.5 text-sm text-text sm:inline-flex sm:w-auto">
         Search
         <input
           type="text"
           value={filters.search}
           onChange={(e) => onChange({ ...filters, search: e.target.value })}
-          className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         />
       </label>
     </div>
