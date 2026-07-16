@@ -6,6 +6,8 @@ import { useTheme } from "./useTheme";
 import { getTasks, createTask, updateTask, deleteTask } from "./lib/storage";
 import { toISODeadline } from "./lib/deadline";
 import { getVisibleTasks } from "./lib/getVisibleTasks";
+import { sortTasks } from "./lib/sortTasks";
+import { getStoredSort, setStoredSort } from "./lib/sortPreference";
 import Button from "./Button";
 
 export default function App() {
@@ -33,9 +35,19 @@ export default function App() {
     tags: [],
   });
 
+  // Sort preference is separate from filters (different concern) and persisted
+  // via its own module, so it survives reloads. Default "manual".
+  const [sortBy, setSortBy] = useState(getStoredSort);
+
+  useEffect(() => {
+    setStoredSort(sortBy);
+  }, [sortBy]);
+
   // One instant shared by every row this render; injected into getTaskStatus.
   const now = new Date();
-  const visible = tasks ? getVisibleTasks(tasks, filters, now) : [];
+  // Filter first, then sort, then render — two separate steps.
+  const filtered = tasks ? getVisibleTasks(tasks, filters, now) : [];
+  const visible = sortTasks(filtered, sortBy);
 
   // Tag filter options are DERIVED from existing tasks (union of all task.tags),
   // plus any currently-selected tag so an orphaned-but-active tag stays
@@ -212,6 +224,8 @@ export default function App() {
           filters={filters}
           onChange={setFilters}
           availableTags={availableTags}
+          sortBy={sortBy}
+          onSortChange={setSortBy}
         />
 
         {/* Progress bar: always rendered, always from ALL tasks. Native

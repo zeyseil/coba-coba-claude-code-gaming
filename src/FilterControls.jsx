@@ -8,7 +8,13 @@
 // a text input. You can select Active + High + Today + "react" all at once.
 const PRIORITIES = ["high", "medium", "low"];
 
-export default function FilterControls({ filters, onChange, availableTags }) {
+export default function FilterControls({
+  filters,
+  onChange,
+  availableTags,
+  sortBy,
+  onSortChange,
+}) {
   function togglePriority(priority) {
     const next = filters.priorities.includes(priority)
       ? filters.priorities.filter((p) => p !== priority)
@@ -127,6 +133,21 @@ export default function FilterControls({ filters, onChange, availableTags }) {
           onChange={(e) => onChange({ ...filters, search: e.target.value })}
           className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         />
+      </label>
+
+      {/* Sort By is a single exclusive choice, separate from the filter
+          dimensions above; it orders the visible list rather than filtering it. */}
+      <label className="flex w-full items-center gap-1.5 text-sm text-text sm:inline-flex sm:w-auto">
+        Sort by
+        <select
+          value={sortBy}
+          onChange={(e) => onSortChange(e.target.value)}
+          className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        >
+          <option value="manual">Manual</option>
+          <option value="priority">Priority</option>
+          <option value="deadline">Deadline</option>
+        </select>
       </label>
     </div>
   );
