@@ -57,8 +57,8 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16 (fitur Folder — keputusan out-of-scope sebelumnya dibalik atas
-permintaan eksplisit).
+2026-07-16 (fitur Subtask — keputusan out-of-scope sebelumnya dibalik atas
+permintaan eksplisit, sesi terpisah setelah fitur Folder).
 
 ## Sudah jadi
 
@@ -133,6 +133,29 @@ permintaan eksplisit).
   hapus folder pakai pola konfirmasi dua-langkah yang sama seperti hapus task.
   Belum ada breakdown per-folder di Statistik dan belum ada drag-drop urutan
   folder — sengaja ditunda (lihat Backlog).
+- Subtask: keputusan "Tidak ada fitur Subtask" sebelumnya **dibalik atas
+  permintaan eksplisit**. Desain: checklist sederhana di dalam task, bukan
+  task bersarang — field baru `subtasks: Subtask[]` di Task, tiap `Subtask`
+  cuma `{ id, title, completed }` (tanpa priority/deadline/tag sendiri).
+  Schema localStorage naik ke versi 3; migrasi dilakukan dengan menerima
+  payload versi 2 sebagai kompatibel di `readState()` (`src/lib/storage.js`)
+  supaya data lama tidak hilang — task lama otomatis dapat `subtasks: []`
+  lewat `sanitizeTask` (pola sama seperti `folderId` saat migrasi ke v2).
+  Tidak ada fungsi storage baru untuk operasi subtask individual: mengikuti
+  pola tags — caller menghitung array `subtasks` baru lalu memanggil
+  `updateTask(id, { subtasks })`, dinormalisasi oleh `normalizeSubtasks` (mirip
+  `normalizeTags`, tapi title tidak di-lowercase karena bukan dedupe key).
+  UI: `TaskRow.jsx` punya tombol expand/collapse (state `expanded`, default
+  tertutup) + badge progress "x/y" yang selalu terlihat begitu ada subtask;
+  tombol ini di luar mode edit judul jadi checklist tetap bisa dioperasikan
+  (add/toggle/rename/delete) baik task sedang di-edit atau tidak — sama
+  seperti toggle complete/favorite yang langsung aktif. Checklist sendiri ada
+  di komponen baru `SubtaskList.jsx`, mengikuti pola 3-state (view / renaming
+  / confirming-delete) yang sama seperti dialog "Manage Folders": klik judul
+  subtask untuk rename inline, hapus pakai konfirmasi dua-langkah. Belum ada
+  subtask yang match ke search/filter, belum ada breakdown subtask di
+  Statistik, belum ada drag-reorder subtask, belum ada bulk action subtask di
+  SelectionBar — sengaja ditunda (lihat Backlog).
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
@@ -147,6 +170,11 @@ permintaan eksplisit).
 - Breakdown per-folder di halaman Statistik (`getTaskStats`/`StatsDialog`) —
   ditunda sampai diminta.
 - Drag-and-drop urutan folder di dialog Manage Folders — ditunda sampai diminta.
+- Subtask match ke search/filter — ditunda sampai diminta.
+- Breakdown subtask di halaman Statistik — ditunda sampai diminta.
+- Drag-reorder subtask di dalam checklist — ditunda sampai diminta.
+- Bulk action subtask (mis. "complete all subtasks") di `SelectionBar` —
+  ditunda sampai diminta.
 
 ---
 
@@ -166,8 +194,15 @@ Task {
   completed   boolean
   favorite    boolean
   folderId    string | null   (uuid folder, atau null = tanpa folder)
+  subtasks    Subtask[]       (boleh kosong)
   order       number
   createdAt   string   (ISO 8601)
+}
+
+Subtask {
+  id          string   (uuid)
+  title       string   (wajib, tidak boleh kosong/whitespace)
+  completed   boolean
 }
 
 Folder {
@@ -181,7 +216,7 @@ Folder {
 Data disimpan di localStorage dengan **versi skema**:
 
 ```
-{ "version": 2, "tasks": [...], "folders": [...] }
+{ "version": 3, "tasks": [...], "folders": [...] }
 ```
 
 Kalau skema berubah nanti, `storage.js` yang menangani migrasi. Jangan sampai
@@ -266,6 +301,20 @@ Satu sumber kebenaran. Jangan sebar logika filter ke komponen.
 - Belum ada drag-and-drop untuk urutan folder, dan belum ada breakdown folder
   di halaman Statistik — di luar scope sesi ini kecuali diminta.
 
+## Subtask
+
+- **Satu task boleh punya banyak subtask** (array `subtasks`), tapi subtask
+  **tidak boleh bersarang** (tidak ada sub-subtask).
+- Subtask hanya punya `title` + `completed`. **Tidak ada** priority/deadline/tag
+  sendiri per subtask — dimensi-dimensi itu tetap milik task induk.
+- Checklist subtask **collapsible** di `TaskRow`: default tertutup, ada tombol
+  expand/collapse. Badge progress ("x/y") tampil begitu task punya minimal
+  satu subtask.
+- Menambah/toggle/rename/hapus subtask **selalu aktif**, tidak terkunci ke mode
+  edit judul task.
+- Status/completed task **tidak otomatis berubah** karena semua/sebagian
+  subtask selesai — keduanya independen (task punya `completed` sendiri).
+
 ## Dark mode
 
 - Bukan fitur tempelan. Semua warna pakai token/CSS variable sejak awal.
@@ -282,7 +331,7 @@ Harus nyaman di HP, tablet, laptop. Desain mobile-first.
 
 Jangan bangun ini kecuali saya minta eksplisit:
 pengingat/notifikasi, kalender, login,
-sinkronisasi database, subtask, recurring task.
+sinkronisasi database, recurring task.
 
 ---
 
