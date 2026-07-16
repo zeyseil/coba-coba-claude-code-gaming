@@ -4,30 +4,34 @@
 // sync today, but the API is shaped for a future async backend).
 
 const STORAGE_KEY = "tasks";
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const PRIORITIES = ["high", "medium", "low"];
+const FREQUENCIES = ["daily", "weekly", "monthly", "yearly"];
 
 // Read and validate the persisted state. On corrupt/invalid/unknown-version
 // data, warn and return empty state WITHOUT overwriting the bad data — it
 // only gets replaced on the next successful write.
 function readState() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw === null) return { tasks: [], folders: [] };
+  if (raw === null) return { tasks: [], folders: [], templates: [] };
 
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
     console.warn("storage: could not parse tasks, ignoring corrupt data", e);
-    return { tasks: [], folders: [] };
+    return { tasks: [], folders: [], templates: [] };
   }
 
-  // v2 payloads are accepted as-is: their tasks are missing `subtasks`, which
-  // sanitizeTask below defaults to [] (same forward-compatible approach used
-  // for `folderId` when v1 tasks were first read as v2).
+  // v2/v3 payloads are accepted as-is: their tasks are missing `templateId`
+  // (v2 is also missing `subtasks`), which sanitizeTask below defaults —
+  // same forward-compatible approach used for `folderId` when v1 tasks were
+  // first read as v2.
   const isCompatibleVersion =
-    parsed.version === SCHEMA_VERSION || parsed.version === 2;
+    parsed.version === SCHEMA_VERSION ||
+    parsed.version === 3 ||
+    parsed.version === 2;
 
   if (
     typeof parsed !== "object" ||
@@ -36,7 +40,7 @@ function readState() {
     !Array.isArray(parsed.tasks)
   ) {
     console.warn("storage: unexpected schema, ignoring", parsed);
-    return { tasks: [], folders: [] };
+    return { tasks: [], folders: [], templates: [] };
   }
 
   // Sanitize each task so corrupt localStorage can't crash the app downstream
@@ -54,7 +58,13 @@ function readState() {
         .filter((folder) => folder !== null)
     : [];
 
-  return { tasks, folders };
+  const templates = Array.isArray(parsed.templates)
+    ? parsed.templates
+        .map((raw, index) => sanitizeTemplate(raw, index))
+        .filter((template) => template !== null)
+    : [];
+
+  return { tasks, folders, templates };
 }
 
 // Validate one persisted task. Returns a valid task, or null when it must be
@@ -75,6 +85,7 @@ function sanitizeTask(raw, index) {
     favorite: Boolean(raw.favorite),
     folderId: typeof raw.folderId === "string" ? raw.folderId : null,
     subtasks: normalizeSubtasks(raw.subtasks),
+    templateId: typeof raw.templateId === "string" ? raw.templateId : null,
     order: Number.isFinite(raw.order) ? raw.order : index,
     createdAt:
       typeof raw.createdAt === "string"
@@ -101,11 +112,45 @@ function sanitizeFolder(raw, index) {
   };
 }
 
-// Persist tasks and folders under the current schema version.
-function writeState({ tasks, folders }) {
+// Validate one persisted recurring template. Returns a valid template, or
+// null when it must be dropped (missing id/title/startDate or a bad
+// recurrence — same drop-vs-coerce logic as tasks/folders).
+function sanitizeTemplate(raw, index) {
+  if (typeof raw !== "object" || raw === null) return null;
+  if (typeof raw.id !== "string" || raw.id === "") return null;
+  if (typeof raw.title !== "string" || raw.title.trim() === "") return null;
+  if (typeof raw.startDate !== "string" || raw.startDate === "") return null;
+
+  const frequency = FREQUENCIES.includes(raw.recurrence?.frequency)
+    ? raw.recurrence.frequency
+    : null;
+  const interval = Number.isFinite(raw.recurrence?.interval)
+    ? Math.max(1, Math.trunc(raw.recurrence.interval))
+    : null;
+  if (!frequency || !interval) return null;
+
+  return {
+    id: raw.id,
+    title: raw.title,
+    priority: PRIORITIES.includes(raw.priority) ? raw.priority : "medium",
+    tags: normalizeTags(raw.tags),
+    folderId: typeof raw.folderId === "string" ? raw.folderId : null,
+    recurrence: { frequency, interval },
+    startDate: raw.startDate,
+    active: raw.active === undefined ? true : Boolean(raw.active),
+    order: Number.isFinite(raw.order) ? raw.order : index,
+    createdAt:
+      typeof raw.createdAt === "string"
+        ? raw.createdAt
+        : new Date().toISOString(),
+  };
+}
+
+// Persist tasks, folders, and templates under the current schema version.
+function writeState({ tasks, folders, templates }) {
   localStorage.setItem(
     STORAGE_KEY,
-    JSON.stringify({ version: SCHEMA_VERSION, tasks, folders })
+    JSON.stringify({ version: SCHEMA_VERSION, tasks, folders, templates })
   );
 }
 
@@ -163,10 +208,12 @@ export async function getTasks() {
 }
 
 // Create a task from user input, filling id/createdAt/order/defaults ourselves.
+// `templateId` defaults to null (a regular task); the recurring engine passes
+// it explicitly when generating an instance.
 export async function createTask(input) {
   assertValidTitle(input.title);
 
-  const { tasks, folders } = readState();
+  const { tasks, folders, templates } = readState();
   const topOrder =
     tasks.length === 0 ? 0 : Math.min(...tasks.map((t) => t.order)) - 1;
 
@@ -180,17 +227,18 @@ export async function createTask(input) {
     favorite: false,
     folderId: typeof input.folderId === "string" ? input.folderId : null,
     subtasks: [],
+    templateId: typeof input.templateId === "string" ? input.templateId : null,
     order: topOrder,
     createdAt: new Date().toISOString(),
   };
 
-  writeState({ tasks: [task, ...tasks], folders });
+  writeState({ tasks: [task, ...tasks], folders, templates });
   return task;
 }
 
 // Patch an existing task. id and createdAt are protected (patch values ignored).
 export async function updateTask(id, patch) {
-  const { tasks, folders } = readState();
+  const { tasks, folders, templates } = readState();
   const index = tasks.findIndex((t) => t.id === id);
   if (index === -1) {
     throw new Error(`Task not found: ${id}`);
@@ -217,7 +265,7 @@ export async function updateTask(id, patch) {
 
   const next = [...tasks];
   next[index] = updated;
-  writeState({ tasks: next, folders });
+  writeState({ tasks: next, folders, templates });
   return updated;
 }
 
@@ -225,7 +273,7 @@ export async function updateTask(id, patch) {
 // orderedIds (0..N-1). One write. Ids not present keep their relative order at
 // the end — a safety net against data loss if a partial list is ever passed.
 export async function reorderTasks(orderedIds) {
-  const { tasks, folders } = readState();
+  const { tasks, folders, templates } = readState();
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const ordered = [];
   for (const id of orderedIds) {
@@ -237,7 +285,7 @@ export async function reorderTasks(orderedIds) {
   }
   for (const leftover of byId.values()) ordered.push(leftover); // shouldn't happen
   const next = ordered.map((task, index) => ({ ...task, order: index }));
-  writeState({ tasks: next, folders });
+  writeState({ tasks: next, folders, templates });
 }
 
 // Re-insert a previously deleted task exactly as it was (same id/order/
@@ -245,17 +293,17 @@ export async function reorderTasks(orderedIds) {
 // `order`, so the task lands back in its old slot. Idempotent: if the id already
 // exists (double undo), do nothing.
 export async function restoreTask(task) {
-  const { tasks, folders } = readState();
+  const { tasks, folders, templates } = readState();
   if (tasks.some((t) => t.id === task.id)) return;
-  writeState({ tasks: [...tasks, task], folders });
+  writeState({ tasks: [...tasks, task], folders, templates });
 }
 
 // Remove a task by id. Idempotent: a missing id is a no-op, not an error.
 export async function deleteTask(id) {
-  const { tasks, folders } = readState();
+  const { tasks, folders, templates } = readState();
   const next = tasks.filter((t) => t.id !== id);
   if (next.length !== tasks.length) {
-    writeState({ tasks: next, folders });
+    writeState({ tasks: next, folders, templates });
   }
 }
 
@@ -269,7 +317,7 @@ export async function getFolders() {
 export async function createFolder(input) {
   assertValidName(input.name);
 
-  const { tasks, folders } = readState();
+  const { tasks, folders, templates } = readState();
   const topOrder =
     folders.length === 0 ? 0 : Math.max(...folders.map((f) => f.order)) + 1;
 
@@ -280,7 +328,7 @@ export async function createFolder(input) {
     createdAt: new Date().toISOString(),
   };
 
-  writeState({ tasks, folders: [...folders, folder] });
+  writeState({ tasks, folders: [...folders, folder], templates });
   return folder;
 }
 
@@ -288,7 +336,7 @@ export async function createFolder(input) {
 export async function renameFolder(id, name) {
   assertValidName(name);
 
-  const { tasks, folders } = readState();
+  const { tasks, folders, templates } = readState();
   const index = folders.findIndex((f) => f.id === id);
   if (index === -1) {
     throw new Error(`Folder not found: ${id}`);
@@ -296,7 +344,7 @@ export async function renameFolder(id, name) {
 
   const next = [...folders];
   next[index] = { ...next[index], name: name.trim() };
-  writeState({ tasks, folders: next });
+  writeState({ tasks, folders: next, templates });
   return next[index];
 }
 
@@ -304,12 +352,108 @@ export async function renameFolder(id, name) {
 // (tasks are never deleted as a side effect of deleting their folder).
 // Idempotent: a missing id is a no-op, not an error.
 export async function deleteFolder(id) {
-  const { tasks, folders } = readState();
+  const { tasks, folders, templates } = readState();
   const nextFolders = folders.filter((f) => f.id !== id);
   if (nextFolders.length === folders.length) return;
 
   const nextTasks = tasks.map((t) =>
     t.folderId === id ? { ...t, folderId: null } : t
   );
-  writeState({ tasks: nextTasks, folders: nextFolders });
+  writeState({ tasks: nextTasks, folders: nextFolders, templates });
+}
+
+// Reject recurring templates with a bad title/startDate/recurrence shape.
+function assertValidTemplateInput(input) {
+  assertValidTitle(input.title);
+  if (typeof input.startDate !== "string" || input.startDate === "") {
+    throw new Error("Recurring template requires a start date");
+  }
+  if (!FREQUENCIES.includes(input.recurrence?.frequency)) {
+    throw new Error("Recurring template requires a valid frequency");
+  }
+  if (
+    !Number.isFinite(input.recurrence?.interval) ||
+    input.recurrence.interval < 1
+  ) {
+    throw new Error("Recurring template requires an interval >= 1");
+  }
+}
+
+// Return all recurring templates, sorted ascending by `order`.
+export async function getTemplates() {
+  const { templates } = readState();
+  return [...templates].sort((a, b) => a.order - b.order);
+}
+
+// Create a recurring template from user input, filling id/createdAt/order
+// ourselves. Does NOT generate the first task instance — that's the
+// recurring engine's job (storage stays a "dumb" CRUD layer, same as
+// createFolder).
+export async function createTemplate(input) {
+  assertValidTemplateInput(input);
+
+  const { tasks, folders, templates } = readState();
+  const topOrder =
+    templates.length === 0
+      ? 0
+      : Math.max(...templates.map((t) => t.order)) + 1;
+
+  const template = {
+    id: crypto.randomUUID(),
+    title: input.title.trim(),
+    priority: PRIORITIES.includes(input.priority) ? input.priority : "medium",
+    tags: normalizeTags(input.tags),
+    folderId: typeof input.folderId === "string" ? input.folderId : null,
+    recurrence: {
+      frequency: input.recurrence.frequency,
+      interval: Math.max(1, Math.trunc(input.recurrence.interval)),
+    },
+    startDate: input.startDate,
+    active: true,
+    order: topOrder,
+    createdAt: new Date().toISOString(),
+  };
+
+  writeState({ tasks, folders, templates: [...templates, template] });
+  return template;
+}
+
+// Patch an existing template (e.g. toggling `active`, renaming). id and
+// createdAt are protected.
+export async function updateTemplate(id, patch) {
+  const { tasks, folders, templates } = readState();
+  const index = templates.findIndex((t) => t.id === id);
+  if (index === -1) {
+    throw new Error(`Recurring template not found: ${id}`);
+  }
+
+  const current = templates[index];
+  const merged = { ...current, ...patch, id: current.id, createdAt: current.createdAt };
+  assertValidTemplateInput(merged);
+
+  const updated = {
+    ...merged,
+    title: merged.title.trim(),
+    tags: normalizeTags(merged.tags),
+  };
+
+  const next = [...templates];
+  next[index] = updated;
+  writeState({ tasks, folders, templates: next });
+  return updated;
+}
+
+// Remove a template by id, and unassign it from any task instance that
+// pointed to it (instances are never deleted — they become regular tasks,
+// per spec §5.6 "Menghapus template tidak menghapus instance lama").
+// Idempotent: a missing id is a no-op, not an error.
+export async function deleteTemplate(id) {
+  const { tasks, folders, templates } = readState();
+  const nextTemplates = templates.filter((t) => t.id !== id);
+  if (nextTemplates.length === templates.length) return;
+
+  const nextTasks = tasks.map((t) =>
+    t.templateId === id ? { ...t, templateId: null } : t
+  );
+  writeState({ tasks: nextTasks, folders, templates: nextTemplates });
 }

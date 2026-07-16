@@ -31,7 +31,12 @@ import {
   createFolder,
   renameFolder,
   deleteFolder,
+  getTemplates,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
 } from "./lib/storage";
+import { computeNextDeadline, buildInstanceFromTemplate } from "./lib/recurringEngine";
 import { toISODeadline } from "./lib/deadline";
 import { getVisibleTasks } from "./lib/getVisibleTasks";
 import { getTaskStats } from "./lib/getTaskStats";
@@ -80,6 +85,23 @@ export default function App() {
   const [renamingFolderName, setRenamingFolderName] = useState("");
   const [confirmingDeleteFolderId, setConfirmingDeleteFolderId] = useState(null);
 
+  // Recurring templates: same "storage is the source of truth, refetch after
+  // mutation" pattern as folders.
+  const [templates, setTemplates] = useState([]);
+  const [newTemplateTitle, setNewTemplateTitle] = useState("");
+  const [newTemplatePriority, setNewTemplatePriority] = useState("medium");
+  const [newTemplateDate, setNewTemplateDate] = useState("");
+  const [newTemplateTime, setNewTemplateTime] = useState("");
+  const [newTemplateTags, setNewTemplateTags] = useState([]);
+  const [newTemplateTagInput, setNewTemplateTagInput] = useState("");
+  const [newTemplateFolderId, setNewTemplateFolderId] = useState(null);
+  const [newTemplateFrequency, setNewTemplateFrequency] = useState("daily");
+  const [newTemplateInterval, setNewTemplateInterval] = useState(1);
+  const [renamingTemplateId, setRenamingTemplateId] = useState(null);
+  const [renamingTemplateName, setRenamingTemplateName] = useState("");
+  const [confirmingDeleteTemplateId, setConfirmingDeleteTemplateId] =
+    useState(null);
+
   // Filter state lives here, in the list's parent. The actual filtering is done
   // by getVisibleTasks — never in this component.
   const [filters, setFilters] = useState({
@@ -102,6 +124,7 @@ export default function App() {
   const filterDialog = useRef(null);
   const statsDialog = useRef(null);
   const foldersDialog = useRef(null);
+  const templatesDialog = useRef(null);
 
   // The most recently deleted task(s), kept so they can be restored. An array so
   // one undo covers both single and bulk delete (single delete stores a
@@ -178,10 +201,18 @@ export default function App() {
     setNewTagInput("");
   }
 
+  function addNewTemplateTag() {
+    const tag = newTemplateTagInput.trim();
+    if (tag === "") return;
+    setNewTemplateTags([...newTemplateTags, tag]);
+    setNewTemplateTagInput("");
+  }
+
   async function refresh() {
     try {
       setTasks(await getTasks());
       setFolders(await getFolders());
+      setTemplates(await getTemplates());
     } catch (e) {
       setError(String(e?.message ?? e));
       setTasks([]);
@@ -222,12 +253,27 @@ export default function App() {
     }
   }
 
+  // Recurring Task spec §5.4/§7: completing an instance triggers generation
+  // of the next one, computed from THIS instance's deadline (not "now" and
+  // not the template's original startDate) so manual deadline edits don't
+  // cause drift. No-op for regular tasks, already-completed toggles-off, or
+  // instances whose template was deleted/paused (spec §9 "Template nonaktif").
+  async function maybeGenerateNextInstance(task, patch) {
+    if (patch.completed !== true || !task?.templateId) return;
+    const template = templates.find((t) => t.id === task.templateId);
+    if (!template || !template.active) return;
+    const nextDeadline = computeNextDeadline(task.deadline, template.recurrence);
+    await createTask(buildInstanceFromTemplate(template, nextDeadline));
+  }
+
   // Used for both toggling completed and saving an edited title. Returns true
   // on success so a row can decide whether to leave edit mode.
   async function handleUpdate(id, patch) {
     setLastDeleted(null); // closes the undo window
     try {
+      const current = tasks?.find((t) => t.id === id);
       await updateTask(id, patch);
+      await maybeGenerateNextInstance(current, patch);
       setError(null);
       await refresh();
       return true;
@@ -333,7 +379,9 @@ export default function App() {
     setLastDeleted(null); // closes the undo window
     try {
       for (const id of selectedIds) {
+        const current = tasks?.find((t) => t.id === id);
         await updateTask(id, { completed });
+        await maybeGenerateNextInstance(current, { completed });
       }
       setError(null);
       await refresh();
@@ -411,6 +459,87 @@ export default function App() {
     }
   }
 
+  // --- Recurring templates --------------------------------------------------
+
+  // Creates the template, then immediately generates its first instance from
+  // `startDate` (storage.createTemplate stays "dumb" CRUD, generation is the
+  // engine's job — same separation as the rest of the recurring feature).
+  async function handleCreateTemplate(e) {
+    e.preventDefault();
+    try {
+      const startDate = toISODeadline(newTemplateDate, newTemplateTime);
+      if (!startDate) {
+        throw new Error("Recurring template requires a start date");
+      }
+      const template = await createTemplate({
+        title: newTemplateTitle,
+        priority: newTemplatePriority,
+        tags: newTemplateTags,
+        folderId: newTemplateFolderId,
+        recurrence: {
+          frequency: newTemplateFrequency,
+          interval: Number(newTemplateInterval) || 1,
+        },
+        startDate,
+      });
+      await createTask(buildInstanceFromTemplate(template, template.startDate));
+      setNewTemplateTitle("");
+      setNewTemplatePriority("medium");
+      setNewTemplateDate("");
+      setNewTemplateTime("");
+      setNewTemplateTags([]);
+      setNewTemplateTagInput("");
+      setNewTemplateFolderId(null);
+      setNewTemplateFrequency("daily");
+      setNewTemplateInterval(1);
+      setError(null);
+      await refresh();
+    } catch (err) {
+      setError(String(err?.message ?? err));
+    }
+  }
+
+  function startRenameTemplate(template) {
+    setRenamingTemplateId(template.id);
+    setRenamingTemplateName(template.title);
+    setConfirmingDeleteTemplateId(null);
+  }
+
+  async function saveRenameTemplate(e) {
+    e.preventDefault();
+    try {
+      await updateTemplate(renamingTemplateId, { title: renamingTemplateName });
+      setRenamingTemplateId(null);
+      setError(null);
+      await refresh();
+    } catch (err) {
+      setError(String(err?.message ?? err));
+    }
+  }
+
+  async function handleToggleTemplateActive(template) {
+    try {
+      await updateTemplate(template.id, { active: !template.active });
+      setError(null);
+      await refresh();
+    } catch (err) {
+      setError(String(err?.message ?? err));
+    }
+  }
+
+  // Deleting a template unassigns it from its instances (storage handles
+  // that); it never deletes the instances themselves (spec §5.6).
+  async function handleDeleteTemplate(id) {
+    try {
+      await deleteTemplate(id);
+      setConfirmingDeleteTemplateId(null);
+      setError(null);
+      await refresh();
+    } catch (err) {
+      setError(String(err?.message ?? err));
+    }
+  }
+
   return (
     <div className="min-h-screen bg-bg text-text">
       <header className="mx-auto flex max-w-3xl items-center justify-between px-4 py-6">
@@ -456,6 +585,13 @@ export default function App() {
             onClick={() => foldersDialog.current.showModal()}
           >
             Folders
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => templatesDialog.current.showModal()}
+          >
+            Recurring
           </Button>
           <Button
             type="button"
@@ -782,6 +918,233 @@ export default function App() {
             type="button"
             variant="primary"
             onClick={() => foldersDialog.current.close()}
+            className="mt-3 w-full sm:w-auto"
+          >
+            Done
+          </Button>
+        </dialog>
+
+        {/* Manage recurring templates popup. Same native <dialog> pattern as
+            Folders. Only title is rename-able inline; other fields (priority/
+            tags/folder/frequency/interval) are set at creation and not
+            editable afterward — active/paused is the one other mutable
+            field, via a dedicated toggle. Deleting a template unassigns it
+            from its instances, it never deletes them (spec §5.6). */}
+        <dialog
+          ref={templatesDialog}
+          aria-labelledby="templates-title"
+          onClick={(e) => {
+            if (e.target === templatesDialog.current)
+              templatesDialog.current.close();
+          }}
+          className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-surface p-4 text-text [&::backdrop]:bg-overlay"
+        >
+          <h2 id="templates-title" className="mb-3 text-lg font-semibold">
+            Recurring templates
+          </h2>
+          <form
+            onSubmit={handleCreateTemplate}
+            className="mb-3 flex flex-wrap items-end gap-3"
+          >
+            <input
+              value={newTemplateTitle}
+              onChange={(e) => setNewTemplateTitle(e.target.value)}
+              placeholder="New recurring task"
+              className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            />
+            <select
+              value={newTemplatePriority}
+              onChange={(e) => setNewTemplatePriority(e.target.value)}
+              className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              <option value="high">high</option>
+              <option value="medium">medium</option>
+              <option value="low">low</option>
+            </select>
+            <select
+              value={newTemplateFrequency}
+              onChange={(e) => setNewTemplateFrequency(e.target.value)}
+              className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+            <label className="flex items-center gap-1.5 text-sm text-text">
+              Every
+              <input
+                type="number"
+                min={1}
+                value={newTemplateInterval}
+                onChange={(e) => setNewTemplateInterval(e.target.value)}
+                className="w-16 min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              />
+            </label>
+            <input
+              type="date"
+              value={newTemplateDate}
+              onChange={(e) => setNewTemplateDate(e.target.value)}
+              className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            />
+            <input
+              type="time"
+              value={newTemplateTime}
+              onChange={(e) => setNewTemplateTime(e.target.value)}
+              className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            />
+            <select
+              value={newTemplateFolderId ?? ""}
+              onChange={(e) => setNewTemplateFolderId(e.target.value || null)}
+              className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              <option value="">No folder</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              value={newTemplateTagInput}
+              onChange={(e) => setNewTemplateTagInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addNewTemplateTag();
+                }
+              }}
+              placeholder="New tag"
+              className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={addNewTemplateTag}
+              className="w-full sm:w-auto"
+            >
+              Add tag
+            </Button>
+            {newTemplateTags.map((tag, i) => (
+              <span
+                key={i}
+                className="inline-flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-xs text-text-muted"
+              >
+                {tag}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() =>
+                    setNewTemplateTags(newTemplateTags.filter((_, j) => j !== i))
+                  }
+                >
+                  x
+                </Button>
+              </span>
+            ))}
+            <Button type="submit" variant="primary" className="w-full sm:w-auto">
+              Add
+            </Button>
+          </form>
+          {error && (
+            <p className="mb-3 text-sm text-status-overdue">{error}</p>
+          )}
+          {templates.length === 0 ? (
+            <p className="text-sm text-text-muted">No recurring templates yet.</p>
+          ) : (
+            <ul className="divide-y divide-border rounded-lg border border-border">
+              {templates.map((template) => (
+                <li
+                  key={template.id}
+                  className="flex flex-wrap items-center gap-3 px-3 py-2"
+                >
+                  {renamingTemplateId === template.id ? (
+                    <form
+                      onSubmit={saveRenameTemplate}
+                      className="flex flex-1 flex-wrap items-center gap-2"
+                    >
+                      <input
+                        value={renamingTemplateName}
+                        onChange={(e) => setRenamingTemplateName(e.target.value)}
+                        className="min-h-11 sm:min-h-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      />
+                      <Button type="submit" variant="primary">
+                        Save
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => setRenamingTemplateId(null)}
+                      >
+                        Cancel
+                      </Button>
+                    </form>
+                  ) : (
+                    <>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Edit recurring template: ${template.title}`}
+                        onClick={() => startRenameTemplate(template)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            startRenameTemplate(template);
+                          }
+                        }}
+                        className="min-w-0 flex-1 cursor-pointer break-words text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      >
+                        {template.title}
+                        <span className="ml-2 text-xs text-text-muted">
+                          Every {template.recurrence.interval}{" "}
+                          {template.recurrence.frequency}
+                        </span>
+                      </span>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        aria-pressed={template.active}
+                        onClick={() => handleToggleTemplateActive(template)}
+                      >
+                        {template.active ? "Active" : "Paused"}
+                      </Button>
+                      {confirmingDeleteTemplateId === template.id ? (
+                        <>
+                          <Button
+                            variant="danger"
+                            aria-label={`Confirm delete recurring template: ${template.title}`}
+                            onClick={() => handleDeleteTemplate(template.id)}
+                          >
+                            Confirm
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            onClick={() => setConfirmingDeleteTemplateId(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="danger"
+                          onClick={() =>
+                            setConfirmingDeleteTemplateId(template.id)
+                          }
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => templatesDialog.current.close()}
             className="mt-3 w-full sm:w-auto"
           >
             Done
