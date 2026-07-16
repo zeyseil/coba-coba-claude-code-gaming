@@ -33,7 +33,37 @@ function readState() {
     return [];
   }
 
-  return parsed.tasks;
+  // Sanitize each task so corrupt localStorage can't crash the app downstream
+  // (e.g. tags: null breaking task.tags.map in the UI). We coerce fixable
+  // fields to safe defaults, but DROP tasks missing a hard requirement (id or a
+  // real title) since we can't invent those. `order` falls back to the array
+  // index here, so a missing/invalid order still yields a stable sequence.
+  return parsed.tasks
+    .map((raw, index) => sanitizeTask(raw, index))
+    .filter((task) => task !== null);
+}
+
+// Validate one persisted task. Returns a valid task, or null when it must be
+// dropped. Coerce vs drop: title is required by spec and id identifies the task,
+// so both are drop conditions; everything else has a safe default.
+function sanitizeTask(raw, index) {
+  if (typeof raw !== "object" || raw === null) return null;
+  if (typeof raw.id !== "string" || raw.id === "") return null;
+  if (typeof raw.title !== "string" || raw.title.trim() === "") return null;
+
+  return {
+    id: raw.id,
+    title: raw.title,
+    priority: PRIORITIES.includes(raw.priority) ? raw.priority : "medium",
+    deadline: typeof raw.deadline === "string" ? raw.deadline : null,
+    tags: normalizeTags(raw.tags),
+    completed: Boolean(raw.completed),
+    order: Number.isFinite(raw.order) ? raw.order : index,
+    createdAt:
+      typeof raw.createdAt === "string"
+        ? raw.createdAt
+        : new Date().toISOString(),
+  };
 }
 
 // Persist the task list under the current schema version.
@@ -144,6 +174,16 @@ export async function reorderTasks(orderedIds) {
   for (const leftover of byId.values()) ordered.push(leftover); // shouldn't happen
   const next = ordered.map((task, index) => ({ ...task, order: index }));
   writeState(next);
+}
+
+// Re-insert a previously deleted task exactly as it was (same id/order/
+// createdAt), so undo restores its original position. getTasks() sorts by
+// `order`, so the task lands back in its old slot. Idempotent: if the id already
+// exists (double undo), do nothing.
+export async function restoreTask(task) {
+  const tasks = readState();
+  if (tasks.some((t) => t.id === task.id)) return;
+  writeState([...tasks, task]);
 }
 
 // Remove a task by id. Idempotent: a missing id is a no-op, not an error.

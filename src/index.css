@@ -30,6 +30,7 @@
   --color-progress-track: #e5e7eb;
   --color-disabled-bg: #f3f4f6;
   --color-disabled-fg: #9ca3af;
+  --color-overlay: rgba(0, 0, 0, 0.4);
 }
 
 .dark {
@@ -51,6 +52,7 @@
   --color-progress-track: #3f3f46;
   --color-disabled-bg: #27272a;
   --color-disabled-fg: #6b7280;
+  --color-overlay: rgba(0, 0, 0, 0.6);
 }
 
 /* Expose the tokens to Tailwind so they become utilities (bg-bg, text-text, ...). */
@@ -73,4 +75,5 @@
   --color-progress-track: var(--color-progress-track);
   --color-disabled-bg: var(--color-disabled-bg);
   --color-disabled-fg: var(--color-disabled-fg);
+  --color-overlay: var(--color-overlay);
 }

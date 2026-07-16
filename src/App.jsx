@@ -1,4 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
 import ThemeToggle from "./ThemeToggle";
 import TaskRow from "./TaskRow";
 import FilterControls from "./FilterControls";
@@ -8,6 +22,7 @@ import {
   createTask,
   updateTask,
   deleteTask,
+  restoreTask,
   reorderTasks,
 } from "./lib/storage";
 import { toISODeadline } from "./lib/deadline";
@@ -16,7 +31,24 @@ import { sortTasks } from "./lib/sortTasks";
 import { getStoredSort, setStoredSort } from "./lib/sortPreference";
 import Button from "./Button";
 
+// Lightweight, non-interactive clone shown under the pointer while a row is
+// dragged (rendered inside DragOverlay). Kept separate from TaskRow so it
+// carries no edit state or hooks — it only needs to look like the row.
+function RowOverlay({ task }) {
+  if (!task) return null;
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 shadow-lg">
+      <span className="select-none text-text-muted">⠿</span>
+      <span className="text-sm text-text">{task.title}</span>
+      <span className="inline-flex items-center rounded-lg border border-border px-2 py-0.5 text-xs capitalize text-text-muted">
+        {task.priority}
+      </span>
+    </div>
+  );
+}
+
 export default function App() {
+  // (popups: New task + Filters via native <dialog>)
   const { theme, toggle } = useTheme();
 
   // Storage is the single source of truth: after every mutation we refetch and
@@ -44,6 +76,28 @@ export default function App() {
   // Sort preference is separate from filters (different concern) and persisted
   // via its own module, so it survives reloads. Default "manual".
   const [sortBy, setSortBy] = useState(getStoredSort);
+
+  // The New task form and the filter panel each live in a native <dialog>,
+  // driven imperatively via these refs (showModal/close). No "isOpen" state:
+  // the dialog element owns its own open state, focus trap, and Escape-to-close.
+  const newTaskDialog = useRef(null);
+  const filterDialog = useRef(null);
+
+  // The most recently deleted task, kept so it can be restored. Persists until
+  // the next task action (add/edit/toggle/delete/reorder) or an Undo. null means
+  // nothing to undo. Single-level: a new delete replaces the previous one.
+  const [lastDeleted, setLastDeleted] = useState(null);
+
+  // Id of the row currently being dragged, so DragOverlay can render its clone.
+  const [activeId, setActiveId] = useState(null);
+
+  // Pointer covers mouse + touch; Keyboard makes reorder operable without a
+  // mouse (Space to lift, arrows to move). distance:8 stops a plain click/tap on
+  // in-row buttons from starting a drag.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   useEffect(() => {
     setStoredSort(sortBy);
@@ -83,8 +137,11 @@ export default function App() {
   const reorderable = sortBy === "manual" && !filterActive;
 
   function addNewTag() {
-    if (newTagInput === "") return;
-    setNewTags([...newTags, newTagInput]);
+    // Trim before the empty check: a whitespace-only tag would otherwise show
+    // as a chip, then get silently dropped by normalizeTags on save.
+    const tag = newTagInput.trim();
+    if (tag === "") return;
+    setNewTags([...newTags, tag]);
     setNewTagInput("");
   }
 
@@ -103,6 +160,8 @@ export default function App() {
 
   async function handleAdd(e) {
     e.preventDefault();
+    // Any other task action closes the undo window for the last delete.
+    setLastDeleted(null);
     try {
       // Let storage.js validate the title (empty/whitespace is rejected there).
       await createTask({
@@ -119,6 +178,9 @@ export default function App() {
       setNewTagInput("");
       setError(null);
       await refresh();
+      // Only close on success; on validation error we keep the dialog open so
+      // the error message stays visible next to the fields.
+      newTaskDialog.current?.close();
     } catch (err) {
       setError(String(err?.message ?? err));
     }
@@ -127,6 +189,7 @@ export default function App() {
   // Used for both toggling completed and saving an edited title. Returns true
   // on success so a row can decide whether to leave edit mode.
   async function handleUpdate(id, patch) {
+    setLastDeleted(null); // closes the undo window
     try {
       await updateTask(id, patch);
       setError(null);
@@ -143,6 +206,7 @@ export default function App() {
   // set in order, so its ids form the complete permutation we hand to storage.
   async function handleReorder(from, to) {
     if (from === to) return; // dropping onto itself is a no-op
+    setLastDeleted(null); // closes the undo window
     try {
       const ids = visible.map((t) => t.id);
       const next = [...ids];
@@ -156,9 +220,36 @@ export default function App() {
     }
   }
 
+  // Translate a @dnd-kit drop into our index-based reorder. `visible` is the
+  // full manually-ordered list (reorder is gated to that), so its ids form the
+  // complete permutation reorderTasks expects.
+  function handleDragEnd(e) {
+    setActiveId(null);
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const ids = visible.map((t) => t.id);
+    handleReorder(ids.indexOf(active.id), ids.indexOf(over.id));
+  }
+
   async function handleDelete(id) {
+    // Grab the full task before removing it, so it can be restored via Undo.
+    const removed = tasks?.find((t) => t.id === id);
     try {
       await deleteTask(id);
+      setError(null);
+      await refresh();
+      setLastDeleted(removed ?? null);
+    } catch (err) {
+      setError(String(err?.message ?? err));
+    }
+  }
+
+  // Restore the most recently deleted task to its original position.
+  async function handleUndo() {
+    if (!lastDeleted) return;
+    try {
+      await restoreTask(lastDeleted);
+      setLastDeleted(null);
       setError(null);
       await refresh();
     } catch (err) {
@@ -174,16 +265,67 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 pb-16 space-y-6">
-        <form
-          onSubmit={handleAdd}
-          className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-4"
+        {/* Control row: the heavy New task form and filter panel now live in
+            popups, opened from these buttons. Sort By stays here (visible) since
+            it orders the list rather than filtering it. */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => newTaskDialog.current.showModal()}
+          >
+            + New task
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            aria-label={filterActive ? "Filters (active)" : "Filters"}
+            onClick={() => filterDialog.current.showModal()}
+          >
+            Filters
+            {filterActive && (
+              <span aria-hidden="true" className="text-accent">
+                ●
+              </span>
+            )}
+          </Button>
+          <label className="flex items-center gap-1.5 text-sm text-text">
+            Sort by
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              <option value="manual">Manual</option>
+              <option value="priority">Priority</option>
+              <option value="deadline">Deadline</option>
+            </select>
+          </label>
+        </div>
+
+        {error && <p className="text-sm text-status-overdue">{error}</p>}
+
+        {/* New task popup. Native <dialog>: showModal() gives focus trap,
+            Escape-to-close, and a backdrop for free. The onClick closes it when
+            the backdrop (the dialog element itself) is clicked. */}
+        <dialog
+          ref={newTaskDialog}
+          aria-labelledby="new-task-title"
+          onClick={(e) => {
+            if (e.target === newTaskDialog.current) newTaskDialog.current.close();
+          }}
+          className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-surface p-4 text-text [&::backdrop]:bg-overlay"
         >
-          <input
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="New task"
-            className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-          />
+          <h2 id="new-task-title" className="mb-3 text-lg font-semibold">
+            New task
+          </h2>
+          <form onSubmit={handleAdd} className="flex flex-wrap items-end gap-3">
+            <input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="New task"
+              className="w-full sm:w-auto min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            />
           <select
             value={newPriority}
             onChange={(e) => setNewPriority(e.target.value)}
@@ -242,20 +384,53 @@ export default function App() {
               </Button>
             </span>
           ))}
+          {/* Add-time errors (e.g. empty title) show here, inside the dialog,
+              so feedback is visible while the modal is open. */}
+          {error && (
+            <p className="w-full text-sm text-status-overdue">{error}</p>
+          )}
           <Button type="submit" variant="primary" className="w-full sm:w-auto">
             Add
           </Button>
-        </form>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => newTaskDialog.current.close()}
+            className="w-full sm:w-auto"
+          >
+            Close
+          </Button>
+          </form>
+        </dialog>
 
-        {error && <p className="text-sm text-status-overdue">{error}</p>}
-
-        <FilterControls
-          filters={filters}
-          onChange={setFilters}
-          availableTags={availableTags}
-          sortBy={sortBy}
-          onSortChange={setSortBy}
-        />
+        {/* Filter popup. Same native <dialog> pattern. Filter changes apply live
+            (onChange updates state immediately), so there is no Apply button —
+            "Done" just closes. */}
+        <dialog
+          ref={filterDialog}
+          aria-labelledby="filter-title"
+          onClick={(e) => {
+            if (e.target === filterDialog.current) filterDialog.current.close();
+          }}
+          className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-surface p-4 text-text [&::backdrop]:bg-overlay"
+        >
+          <h2 id="filter-title" className="mb-3 text-lg font-semibold">
+            Filters
+          </h2>
+          <FilterControls
+            filters={filters}
+            onChange={setFilters}
+            availableTags={availableTags}
+          />
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => filterDialog.current.close()}
+            className="mt-3 w-full sm:w-auto"
+          >
+            Done
+          </Button>
+        </dialog>
 
         {/* Progress bar: always rendered, always from ALL tasks. Native
             <progress>, styled with utilities only (track + size); the fill
@@ -283,26 +458,55 @@ export default function App() {
           </p>
         ) : null}
 
+        {/* Undo bar for the last delete. Persists until the next task action or
+            an Undo (see setLastDeleted calls in the handlers). */}
+        {lastDeleted && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-muted">
+            <span className="min-w-0 truncate">
+              Deleted "{lastDeleted.title}"
+            </span>
+            <Button type="button" variant="secondary" onClick={handleUndo}>
+              Undo
+            </Button>
+          </div>
+        )}
+
         {visible.length === 0 ? (
           tasks && total > 0 ? (
             <p className="text-sm text-text-muted">No tasks match your filters</p>
           ) : null
         ) : (
-          <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
-            {visible.map((task, i) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                now={now}
-                index={i}
-                total={visible.length}
-                reorderable={reorderable}
-                onReorder={handleReorder}
-                onUpdate={handleUpdate}
-                onDelete={handleDelete}
-              />
-            ))}
-          </ul>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={(e) => setActiveId(e.active.id)}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setActiveId(null)}
+          >
+            <SortableContext
+              items={visible.map((t) => t.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
+                {visible.map((task) => (
+                  <TaskRow
+                    key={task.id}
+                    task={task}
+                    now={now}
+                    reorderable={reorderable}
+                    onUpdate={handleUpdate}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
+            {/* Floating clone that follows the pointer while dragging. */}
+            <DragOverlay>
+              {activeId ? (
+                <RowOverlay task={visible.find((t) => t.id === activeId)} />
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </main>
     </div>
