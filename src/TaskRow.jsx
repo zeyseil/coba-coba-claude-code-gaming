@@ -17,7 +17,16 @@ const FIELD =
 // One task row. Owns only its local edit state; the task list and all storage
 // mutations live in App. onUpdate returns true on success so the row knows
 // whether to leave edit mode. `now` is injected from App for status.
-export default function TaskRow({ task, now, onUpdate, onDelete }) {
+export default function TaskRow({
+  task,
+  now,
+  index,
+  total,
+  reorderable,
+  onReorder,
+  onUpdate,
+  onDelete,
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftPriority, setDraftPriority] = useState("medium");
@@ -63,8 +72,22 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
 
   const status = getTaskStatus(task, now);
 
+  // Drop target lives on the row, but only while reordering is allowed. onDragOver
+  // must preventDefault so onDrop can fire. The dragged source index travels in
+  // the native dataTransfer — no React state needed.
+  const dragProps = reorderable
+    ? {
+        onDragOver: (e) => e.preventDefault(),
+        onDrop: (e) => {
+          e.preventDefault();
+          const from = Number(e.dataTransfer.getData("text/plain"));
+          if (!Number.isNaN(from)) onReorder(from, index);
+        },
+      }
+    : {};
+
   return (
-    <li className="flex flex-wrap items-center gap-3 px-4 py-3">
+    <li className="flex flex-wrap items-center gap-3 px-4 py-3" {...dragProps}>
       <input
         type="checkbox"
         checked={task.completed}
@@ -153,6 +176,38 @@ export default function TaskRow({ task, now, onUpdate, onDelete }) {
         </form>
       ) : (
         <>
+          {reorderable && (
+            <>
+              <span
+                draggable
+                onDragStart={(e) =>
+                  e.dataTransfer.setData("text/plain", String(index))
+                }
+                className="cursor-grab select-none text-text-muted"
+                aria-hidden="true"
+              >
+                ⠿
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Move up"
+                disabled={index === 0}
+                onClick={() => onReorder(index, index - 1)}
+              >
+                ↑
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Move down"
+                disabled={index === total - 1}
+                onClick={() => onReorder(index, index + 1)}
+              >
+                ↓
+              </Button>
+            </>
+          )}
           <span
             onClick={startEdit}
             className={`min-w-0 basis-full sm:basis-auto sm:flex-1 cursor-pointer break-words line-clamp-2 text-sm text-text ${

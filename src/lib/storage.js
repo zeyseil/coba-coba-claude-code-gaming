@@ -127,6 +127,25 @@ export async function updateTask(id, patch) {
   return updated;
 }
 
+// Reindex the whole list so each task's `order` matches its position in
+// orderedIds (0..N-1). One write. Ids not present keep their relative order at
+// the end — a safety net against data loss if a partial list is ever passed.
+export async function reorderTasks(orderedIds) {
+  const tasks = readState();
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const ordered = [];
+  for (const id of orderedIds) {
+    const task = byId.get(id);
+    if (task) {
+      ordered.push(task);
+      byId.delete(id);
+    }
+  }
+  for (const leftover of byId.values()) ordered.push(leftover); // shouldn't happen
+  const next = ordered.map((task, index) => ({ ...task, order: index }));
+  writeState(next);
+}
+
 // Remove a task by id. Idempotent: a missing id is a no-op, not an error.
 export async function deleteTask(id) {
   const tasks = readState();
