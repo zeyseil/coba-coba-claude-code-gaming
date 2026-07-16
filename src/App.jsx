@@ -793,7 +793,7 @@ export default function App() {
           <h2 id="stats-title" className="mb-3 text-lg font-semibold">
             Statistics
           </h2>
-          <StatsDialog stats={getTaskStats(tasks ?? [])} />
+          <StatsDialog stats={getTaskStats(tasks ?? [], folders, templates)} />
           <Button
             type="button"
             variant="primary"

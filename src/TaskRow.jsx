@@ -72,6 +72,7 @@ export default function TaskRow({
 
   function cancel() {
     // Discard the drafts; the stored task is untouched.
+    setConfirmingDelete(false);
     setIsEditing(false);
   }
 
@@ -86,14 +87,19 @@ export default function TaskRow({
       tags: draftTags,
       folderId: draftFolderId,
     });
-    if (ok) setIsEditing(false);
+    if (ok) {
+      setConfirmingDelete(false);
+      setIsEditing(false);
+    }
   }
 
   const status = getTaskStatus(task, now);
 
   // Sortable wiring from @dnd-kit. Disabled unless reordering is allowed (Sort =
-  // Manual and unfiltered), matching the spec. The DndContext + drag logic live
-  // in App; this hook only reports position and exposes the drag handle props.
+  // Manual and unfiltered) AND the row isn't being edited (avoids an accidental
+  // drag while typing). The DndContext + drag logic live in App; this hook only
+  // reports position and exposes the drag handle props.
+  const dragEnabled = reorderable && !isEditing;
   const {
     attributes,
     listeners,
@@ -102,7 +108,7 @@ export default function TaskRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id, disabled: !reorderable });
+  } = useSortable({ id: task.id, disabled: !dragEnabled });
 
   const sortableStyle = {
     transform: CSS.Transform.toString(transform),
@@ -117,16 +123,40 @@ export default function TaskRow({
         isDragging ? "opacity-40" : "hover:bg-row-hover"
       }`}
     >
-      {/* Selection checkbox: only in selection mode, leftmost. Ephemeral UI
-          state (drives App's selectedIds), separate from the completed checkbox
-          below — the two do not conflict. Rounded (vs. the square completed
-          checkbox) so the two are distinguishable at a glance when both show.
-          Native checkboxes ignore border-radius while appearance:auto (the
-          browser draws its own square widget), so this one opts out with
-          appearance-none and is drawn manually. The fill is driven by the
-          `selected` prop directly (same pattern as the completed-title
-          line-through below) rather than the :checked pseudo-class, which
-          proved unreliable to repaint right after a React-driven toggle. */}
+      {/* Drag handle: fixed leftmost position in both view and edit mode, so
+          the row layout never shifts as Sort By or edit state changes. When
+          dragging isn't allowed (Sort != Manual, filtered, selection mode, or
+          the row is being edited) an invisible placeholder of the same size
+          holds the slot instead of removing it. @dnd-kit listeners drive
+          mouse, touch, AND keyboard reorder (Space to lift, arrows to move,
+          Space to drop — announced to screen readers). touch-action:none lets
+          touch-drag work without scrolling the list. */}
+      {dragEnabled ? (
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label={`Drag to reorder: ${task.title}`}
+          className="cursor-grab select-none px-1 text-text-muted [touch-action:none] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        >
+          ⠿
+        </button>
+      ) : (
+        <span aria-hidden="true" className="invisible select-none px-1">
+          ⠿
+        </span>
+      )}
+      {/* Selection checkbox: only in selection mode. Ephemeral UI state
+          (drives App's selectedIds), separate from the completed checkbox in
+          the edit form — the two do not conflict. Rounded (vs. a square
+          checkbox) so it reads as distinct at a glance. Native checkboxes
+          ignore border-radius while appearance:auto (the browser draws its
+          own square widget), so this one opts out with appearance-none and is
+          drawn manually. The fill is driven by the `selected` prop directly
+          (same pattern as the completed-title line-through below) rather than
+          the :checked pseudo-class, which proved unreliable to repaint right
+          after a React-driven toggle. */}
       {selectionMode && (
         <input
           type="checkbox"
@@ -138,12 +168,6 @@ export default function TaskRow({
           }`}
         />
       )}
-      <input
-        type="checkbox"
-        checked={task.completed}
-        onChange={() => onUpdate(task.id, { completed: !task.completed })}
-        className="size-5 sm:size-4 [accent-color:var(--color-accent)]"
-      />
       <button
         type="button"
         onClick={() => onUpdate(task.id, { favorite: !task.favorite })}
@@ -185,6 +209,17 @@ export default function TaskRow({
           onSubmit={save}
           className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center"
         >
+          {/* Completed toggle and delete live only in edit mode now — the row
+              view is kept lean; both actions are one click (title) away. */}
+          <label className="flex items-center gap-2 text-sm text-text">
+            <input
+              type="checkbox"
+              checked={task.completed}
+              onChange={() => onUpdate(task.id, { completed: !task.completed })}
+              className="size-5 sm:size-4 [accent-color:var(--color-accent)]"
+            />
+            Completed
+          </label>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -271,25 +306,36 @@ export default function TaskRow({
           >
             Cancel
           </Button>
+          {confirmingDelete ? (
+            <>
+              <Button
+                variant="danger"
+                aria-label={`Confirm delete: ${task.title}`}
+                onClick={() => onDelete(task.id)}
+                className="w-full sm:w-auto"
+              >
+                Confirm
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmingDelete(false)}
+                className="w-full sm:w-auto"
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="danger"
+              onClick={() => setConfirmingDelete(true)}
+              className="w-full sm:w-auto"
+            >
+              Delete
+            </Button>
+          )}
         </form>
       ) : (
         <>
-          {/* Drag handle. @dnd-kit listeners drive mouse, touch, AND keyboard
-              reorder (Space to lift, arrows to move, Space to drop — announced
-              to screen readers). touch-action:none lets touch-drag work without
-              scrolling the list. */}
-          {reorderable && (
-            <button
-              type="button"
-              ref={setActivatorNodeRef}
-              {...attributes}
-              {...listeners}
-              aria-label={`Drag to reorder: ${task.title}`}
-              className="cursor-grab select-none px-1 text-text-muted [touch-action:none] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            >
-              ⠿
-            </button>
-          )}
           {/* In selection mode the title is plain, non-interactive text —
               edit-on-click is disabled so it doesn't compete with selecting.
               Otherwise it's a <span> (kept for flex/line-clamp/line-through)
@@ -354,27 +400,6 @@ export default function TaskRow({
               {tag}
             </span>
           ))}
-          {confirmingDelete ? (
-            <>
-              <Button
-                variant="danger"
-                aria-label={`Confirm delete: ${task.title}`}
-                onClick={() => onDelete(task.id)}
-              >
-                Confirm
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => setConfirmingDelete(false)}
-              >
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button variant="danger" onClick={() => setConfirmingDelete(true)}>
-              Delete
-            </Button>
-          )}
         </>
       )}
       {expanded && (

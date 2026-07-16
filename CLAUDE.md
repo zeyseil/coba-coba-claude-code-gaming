@@ -57,11 +57,15 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16 (fitur Recurring Task — keputusan out-of-scope sebelumnya dibalik
-atas permintaan eksplisit, sesi terpisah setelah fitur Calendar View;
-mengikuti `.claude/Engineering-Spec-Recurring-Task.md` sebagai referensi,
-bukan kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi
-eksplisit ke user, lihat detail di bawah).
+2026-07-16 (sesi kedua hari ini, setelah fitur Recurring Task: breakdown
+folder/subtask/recurring template di Statistik, plus perapian baris
+`TaskRow` — drag handle permanen kiri dan checkbox complete/delete pindah ke
+edit mode, lihat entri terkait di bawah; fitur Recurring Task sendiri —
+keputusan out-of-scope sebelumnya dibalik atas permintaan eksplisit, sesi
+terpisah setelah fitur Calendar View; mengikuti
+`.claude/Engineering-Spec-Recurring-Task.md` sebagai referensi, bukan
+kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi eksplisit
+ke user, lihat detail di bawah).
 
 ## Sudah jadi
 
@@ -74,7 +78,15 @@ eksplisit ke user, lihat detail di bawah).
 - Token warna + komponen `Button`, dark mode, responsif (satu breakpoint `sm:`).
 - Sort By: Manual / Priority / Deadline (`src/lib/sortTasks.js`).
 - Reorder manual via `@dnd-kit` (pointer + touch + keyboard, DragOverlay); tombol
-  ↑↓ dihapus. Aktif hanya saat Sort = Manual & tak terfilter.
+  ↑↓ dihapus. Aktif hanya saat Sort = Manual, tak terfilter, tidak sedang
+  selection mode, dan baris tidak sedang dalam mode edit (dicegah drag tak
+  sengaja saat mengetik). **Update:** slot drag handle sekarang permanen di
+  posisi paling kiri baris (`TaskRow.jsx`) di kedua mode (view & edit) — saat
+  drag nonaktif, ditampilkan placeholder kosong seukuran handle (bukan
+  disembunyikan total seperti sebelumnya) supaya baris tidak geser saat ganti
+  Sort By atau masuk mode edit. ini membalik keputusan lama "drag handle
+  disembunyikan sepenuhnya saat non-draggable" — sengaja diubah atas
+  permintaan eksplisit untuk merapikan baris.
 - Tampilan deadline sesuai aturan "Deadline > Tampilan" (`formatDeadline`).
 - Validasi/sanitasi bentuk tiap task di `readState()` (`sanitizeTask`): task
   rusak dibuang (tanpa id/title) atau di-coerce (field lain), tidak meng-crash
@@ -84,7 +96,16 @@ eksplisit ke user, lihat detail di bawah).
 - Semantik keyboard/tombol untuk judul yang diklik (a11y): `role="button"`,
   fokusabel, Enter/Space, `aria-label`.
 - Konfirmasi hapus inline dua-langkah (Delete → Confirm/Cancel), state lokal
-  per-baris di `TaskRow`.
+  per-baris di `TaskRow`. **Update:** checkbox toggle complete/uncomplete dan
+  tombol Delete (dengan konfirmasi dua-langkah yang sama) dipindah dari baris
+  view mode ke dalam form edit mode — baris normal (tidak sedang diedit)
+  tidak lagi punya cara toggle complete atau hapus tanpa klik judul dulu
+  untuk masuk edit. `confirmingDelete` di-reset baik saat masuk edit maupun
+  saat keluar (Save/Cancel) supaya tidak nyangkut antar sesi edit. Favorite
+  star dan tombol expand/collapse subtask **tidak berubah**, tetap
+  always-visible di kedua mode. Checkbox seleksi (selection mode) juga tidak
+  berubah posisi. Perubahan ini murni untuk merapikan baris yang dirasa
+  terlalu banyak UI selalu tampil — atas permintaan eksplisit.
 - New task & Filters di balik tombol popup native `<dialog>` (Escape/backdrop
   close, focus-trap bawaan); tombol Filters punya indikator filter aktif; Sort
   By tetap terlihat di halaman. Token `--color-overlay` untuk backdrop.
@@ -105,11 +126,19 @@ eksplisit ke user, lihat detail di bawah).
   seleksi dikosongkan setelah tiap aksi. Konfirmasi hapus dua-langkah di
   `SelectionBar`.
 - Halaman statistik: dialog popup yang menampilkan total/active/completed,
-  breakdown per prioritas (high/medium/low), breakdown per tag dengan count.
-  Dihitung dari **seluruh task** (bukan filtered) via `getTaskStats`
+  breakdown per prioritas (high/medium/low), breakdown per tag dengan count,
+  breakdown per folder (termasuk bucket "No folder"), breakdown subtask
+  (total subtask, completed, jumlah task yang punya subtask — agregat, bukan
+  per-task), dan breakdown recurring template (jumlah template
+  active/paused, instance count per template, plus hitungan orphaned
+  instance untuk task yang `templateId`-nya sudah tidak match template
+  manapun karena template-nya dihapus). Dihitung dari **seluruh task**
+  (bukan filtered) via `getTaskStats(tasks, folders, templates)`
   (`src/lib/getTaskStats.js`). Komponen presentasional `StatsDialog.jsx`
-  mengikuti pola `FilterControls`. Tombol "Statistics" di header, dialog native
-  `<dialog>` dengan pola sama seperti Filters (backdrop-click, Escape, Done).
+  mengikuti pola `FilterControls`, breakdown folder/recurring mengikuti pola
+  chip yang sama seperti breakdown tag. Tombol "Statistics" di header, dialog
+  native `<dialog>` dengan pola sama seperti Filters (backdrop-click, Escape,
+  Done).
 - Favorite/pin task: field `favorite` (boolean) di model task, di-sanitasi di
   `sanitizeTask` dan default `false` di `createTask` (`src/lib/storage.js`),
   pola sama persis dengan `completed`. Toggle lewat tombol bintang di
@@ -118,9 +147,11 @@ eksplisit ke user, lihat detail di bawah).
   di ketiga mode Sort By (Manual/Priority/Deadline): `sortTasks.js` mempartisi
   task jadi favorit/non-favorit dulu, lalu mengurutkan tiap partisi dengan
   logika sort yang sama seperti sebelumnya. Ini keputusan sadar: favorit bukan
-  opsi Sort By ke-4, tapi pin yang berlaku di semua mode. Belum ada filter
-  "Favorites only" dan belum ada bulk action favorite di `SelectionBar` —
-  sengaja ditunda (lihat Backlog).
+  opsi Sort By ke-4, tapi pin yang berlaku di semua mode. Filter "Favorites
+  only" dan bulk action favorite/unfavorite di `SelectionBar` **sengaja
+  tidak dikerjakan** (keputusan final, bukan ditunda) — favorit sudah selalu
+  mengambang ke atas jadi filter terpisah dianggap tidak perlu, dan toggle
+  favorit dianggap lebih cocok dilakukan satu-per-satu daripada bulk.
 - Folder: keputusan "Tidak ada fitur Folder" sebelumnya **dibalik atas
   permintaan eksplisit** — bukan tebakan. Desain: satu folder per task (field
   `folderId`, bukan many-to-many seperti tag), folder adalah entity terkelola
@@ -134,8 +165,9 @@ eksplisit ke user, lihat detail di bawah).
   `deleteFolder` (`src/lib/storage.js`). Rename folder di dialog Manage
   Folders memakai pola sama seperti edit judul task (klik untuk edit inline);
   hapus folder pakai pola konfirmasi dua-langkah yang sama seperti hapus task.
-  Belum ada breakdown per-folder di Statistik dan belum ada drag-drop urutan
-  folder — sengaja ditunda (lihat Backlog).
+  Belum ada drag-drop urutan folder — sengaja ditunda (lihat Backlog).
+  Breakdown per-folder di Statistik sudah dikerjakan (lihat entri Statistik
+  di bawah).
 - Subtask: keputusan "Tidak ada fitur Subtask" sebelumnya **dibalik atas
   permintaan eksplisit**. Desain: checklist sederhana di dalam task, bukan
   task bersarang — field baru `subtasks: Subtask[]` di Task, tiap `Subtask`
@@ -239,15 +271,8 @@ eksplisit ke user, lihat detail di bawah).
 - Wrapper batch opsional di `storage.js` (`deleteTasks`/`restoreTasks`/
   `updateTasks`, satu tulisan per aksi) kalau list membesar — sekarang loop
   sekuensial sudah cukup.
-- Filter "Favorites only" di `FilterControls`/`getVisibleTasks` (dimensi baru,
-  AND dengan filter lain) — ditunda sampai diminta.
-- Bulk action "Favorite/Unfavorite selected" di `SelectionBar` (mirror pola
-  bulk complete/uncomplete) — ditunda sampai diminta.
-- Breakdown per-folder di halaman Statistik (`getTaskStats`/`StatsDialog`) —
-  ditunda sampai diminta.
 - Drag-and-drop urutan folder di dialog Manage Folders — ditunda sampai diminta.
 - Subtask match ke search/filter — ditunda sampai diminta.
-- Breakdown subtask di halaman Statistik — ditunda sampai diminta.
 - Drag-reorder subtask di dalam checklist — ditunda sampai diminta.
 - Bulk action subtask (mis. "complete all subtasks") di `SelectionBar` —
   ditunda sampai diminta.
@@ -256,7 +281,6 @@ eksplisit ke user, lihat detail di bawah).
   active/paused yang bisa di-toggle) — ditunda sampai diminta.
 - Filter "Recurring only" / bulk action recurring di `SelectionBar` —
   ditunda sampai diminta.
-- Breakdown recurring di halaman Statistik — ditunda sampai diminta.
 
 ---
 
