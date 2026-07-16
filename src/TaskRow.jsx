@@ -136,6 +136,21 @@ export default function TaskRow({
         onChange={() => onUpdate(task.id, { completed: !task.completed })}
         className="size-5 sm:size-4 [accent-color:var(--color-accent)]"
       />
+      <button
+        type="button"
+        onClick={() => onUpdate(task.id, { favorite: !task.favorite })}
+        aria-label={
+          task.favorite
+            ? `Unfavorite task: ${task.title}`
+            : `Favorite task: ${task.title}`
+        }
+        aria-pressed={task.favorite}
+        className={`shrink-0 text-lg leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+          task.favorite ? "text-accent" : "text-text-muted"
+        }`}
+      >
+        {task.favorite ? "★" : "☆"}
+      </button>
       {isEditing ? (
         <form
           onSubmit={save}

@@ -58,6 +58,7 @@ function sanitizeTask(raw, index) {
     deadline: typeof raw.deadline === "string" ? raw.deadline : null,
     tags: normalizeTags(raw.tags),
     completed: Boolean(raw.completed),
+    favorite: Boolean(raw.favorite),
     order: Number.isFinite(raw.order) ? raw.order : index,
     createdAt:
       typeof raw.createdAt === "string"
@@ -120,6 +121,7 @@ export async function createTask(input) {
     deadline: input.deadline ?? null,
     tags: normalizeTags(input.tags),
     completed: false,
+    favorite: false,
     order: topOrder,
     createdAt: new Date().toISOString(),
   };
