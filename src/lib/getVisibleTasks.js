@@ -8,7 +8,8 @@ import { getTaskStatus } from "./taskStatus";
 //     priorities: string[],          // [] means NO restriction (all pass)
 //     date: "any"|"today"|"overdue",
 //     search: string,                // empty/whitespace means NO restriction
-//     tags: string[] }               // [] means NO restriction; OR within
+//     tags: string[],                // [] means NO restriction; OR within
+//     folder: "all"|"none"|folderId } // exclusive, like status/date
 //
 // All dimensions are combined with AND: a task passes only if it passes every
 // dimension. Input order is preserved (Array.filter keeps order); no sorting.
@@ -47,6 +48,16 @@ export function getVisibleTasks(tasks, filters, now) {
     if (
       filters.tags.length > 0 &&
       !filters.tags.some((t) => task.tags.includes(t))
+    ) {
+      return false;
+    }
+
+    // Folder (exclusive). "all" = no restriction.
+    if (filters.folder === "none" && task.folderId !== null) return false;
+    if (
+      filters.folder !== "all" &&
+      filters.folder !== "none" &&
+      task.folderId !== filters.folder
     ) {
       return false;
     }

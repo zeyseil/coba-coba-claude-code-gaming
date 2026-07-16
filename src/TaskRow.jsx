@@ -25,6 +25,7 @@ export default function TaskRow({
   reorderable,
   selectionMode,
   selected,
+  folders,
   onToggleSelect,
   onUpdate,
   onDelete,
@@ -36,6 +37,7 @@ export default function TaskRow({
   const [draftTime, setDraftTime] = useState("");
   const [draftTags, setDraftTags] = useState([]);
   const [draftTagInput, setDraftTagInput] = useState("");
+  const [draftFolderId, setDraftFolderId] = useState(null);
   // Two-step delete confirmation lives here, local to the row (same pattern as
   // isEditing). Delete only removes the task after an explicit Confirm.
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -48,6 +50,7 @@ export default function TaskRow({
     setDraftTime(time);
     setDraftTags(task.tags);
     setDraftTagInput("");
+    setDraftFolderId(task.folderId);
     // Clear any pending delete confirmation so it doesn't linger when the row
     // returns from edit mode to the view mode.
     setConfirmingDelete(false);
@@ -77,6 +80,7 @@ export default function TaskRow({
       priority: draftPriority,
       deadline: toISODeadline(draftDate, draftTime),
       tags: draftTags,
+      folderId: draftFolderId,
     });
     if (ok) setIsEditing(false);
   }
@@ -182,6 +186,18 @@ export default function TaskRow({
             onChange={(e) => setDraftTime(e.target.value)}
             className={FIELD}
           />
+          <select
+            value={draftFolderId ?? ""}
+            onChange={(e) => setDraftFolderId(e.target.value || null)}
+            className={FIELD}
+          >
+            <option value="">No folder</option>
+            {folders.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
           <input
             type="text"
             value={draftTagInput}
@@ -293,6 +309,11 @@ export default function TaskRow({
           {status === "overdue" && (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-status-overdue">
               ⚠ Overdue
+            </span>
+          )}
+          {task.folderId && (
+            <span className="inline-flex items-center gap-1 rounded-lg border border-border bg-progress-track px-2 py-1 text-xs text-text-muted">
+              {folders.find((f) => f.id === task.folderId)?.name ?? "?"}
             </span>
           )}
           {task.tags.map((tag) => (

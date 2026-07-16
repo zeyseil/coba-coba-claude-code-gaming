@@ -8,7 +8,12 @@
 // a text input. You can select Active + High + Today + "react" all at once.
 const PRIORITIES = ["high", "medium", "low"];
 
-export default function FilterControls({ filters, onChange, availableTags }) {
+export default function FilterControls({
+  filters,
+  onChange,
+  availableTags,
+  availableFolders,
+}) {
   function togglePriority(priority) {
     const next = filters.priorities.includes(priority)
       ? filters.priorities.filter((p) => p !== priority)
@@ -116,6 +121,33 @@ export default function FilterControls({ filters, onChange, availableTags }) {
               </label>
             ))
           )}
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-2 border-0 p-0">
+        <legend className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+          Folder
+        </legend>
+        <div className="flex flex-wrap gap-3">
+          {[
+            { value: "all", label: "all" },
+            { value: "none", label: "no folder" },
+            ...availableFolders.map((f) => ({ value: f.id, label: f.name })),
+          ].map(({ value, label }) => (
+            <label
+              key={value}
+              className="inline-flex items-center gap-1.5 text-sm text-text"
+            >
+              <input
+                type="radio"
+                name="folder"
+                checked={filters.folder === value}
+                onChange={() => onChange({ ...filters, folder: value })}
+                className="[accent-color:var(--color-accent)]"
+              />
+              {label}
+            </label>
+          ))}
         </div>
       </fieldset>
 
