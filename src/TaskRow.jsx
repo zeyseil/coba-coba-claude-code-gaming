@@ -4,6 +4,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { getTaskStatus } from "./lib/taskStatus";
 import { toISODeadline, fromISODeadline, formatDeadline } from "./lib/deadline";
 import Button from "./Button";
+import SubtaskList from "./SubtaskList";
 
 // Static value->className map for the priority badge. Presentation only; the
 // stored priority string is unchanged.
@@ -41,6 +42,9 @@ export default function TaskRow({
   // Two-step delete confirmation lives here, local to the row (same pattern as
   // isEditing). Delete only removes the task after an explicit Confirm.
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Subtask checklist is collapsed by default; independent of isEditing so it
+  // can be operated (add/toggle/delete) whether or not the title is being edited.
+  const [expanded, setExpanded] = useState(false);
 
   function startEdit() {
     const { date, time } = fromISODeadline(task.deadline);
@@ -154,6 +158,27 @@ export default function TaskRow({
         }`}
       >
         {task.favorite ? "★" : "☆"}
+      </button>
+      {/* Subtask expand/collapse, always shown (even with zero subtasks) so
+          there's a way to add the first one. Progress badge only shows once
+          there's something to count. Lives outside the edit form so the
+          checklist stays operable whether or not the title is being edited
+          (same "always active" treatment as complete/favorite). */}
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        aria-label={
+          expanded
+            ? `Collapse subtasks: ${task.title}`
+            : `Expand subtasks: ${task.title}`
+        }
+        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-progress-track px-2 py-1 text-xs text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      >
+        <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+        {task.subtasks.length > 0
+          ? `${task.subtasks.filter((s) => s.completed).length}/${task.subtasks.length}`
+          : "Subtasks"}
       </button>
       {isEditing ? (
         <form
@@ -346,6 +371,12 @@ export default function TaskRow({
             </Button>
           )}
         </>
+      )}
+      {expanded && (
+        <SubtaskList
+          subtasks={task.subtasks}
+          onChange={(subtasks) => onUpdate(task.id, { subtasks })}
+        />
       )}
     </li>
   );

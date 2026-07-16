@@ -4,7 +4,7 @@
 // sync today, but the API is shaped for a future async backend).
 
 const STORAGE_KEY = "tasks";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const PRIORITIES = ["high", "medium", "low"];
 
@@ -23,10 +23,16 @@ function readState() {
     return { tasks: [], folders: [] };
   }
 
+  // v2 payloads are accepted as-is: their tasks are missing `subtasks`, which
+  // sanitizeTask below defaults to [] (same forward-compatible approach used
+  // for `folderId` when v1 tasks were first read as v2).
+  const isCompatibleVersion =
+    parsed.version === SCHEMA_VERSION || parsed.version === 2;
+
   if (
     typeof parsed !== "object" ||
     parsed === null ||
-    parsed.version !== SCHEMA_VERSION ||
+    !isCompatibleVersion ||
     !Array.isArray(parsed.tasks)
   ) {
     console.warn("storage: unexpected schema, ignoring", parsed);
@@ -68,6 +74,7 @@ function sanitizeTask(raw, index) {
     completed: Boolean(raw.completed),
     favorite: Boolean(raw.favorite),
     folderId: typeof raw.folderId === "string" ? raw.folderId : null,
+    subtasks: normalizeSubtasks(raw.subtasks),
     order: Number.isFinite(raw.order) ? raw.order : index,
     createdAt:
       typeof raw.createdAt === "string"
@@ -133,6 +140,21 @@ function normalizeTags(tags) {
   return out;
 }
 
+// Normalize subtasks: drop entries missing a real id/title, coerce `completed`
+// to a boolean. Unlike tags, titles are kept as-typed (not lowercased) since
+// they aren't used as a dedupe key.
+function normalizeSubtasks(subtasks) {
+  if (!Array.isArray(subtasks)) return [];
+  const out = [];
+  for (const s of subtasks) {
+    if (typeof s !== "object" || s === null) continue;
+    if (typeof s.id !== "string" || s.id === "") continue;
+    if (typeof s.title !== "string" || s.title.trim() === "") continue;
+    out.push({ id: s.id, title: s.title, completed: Boolean(s.completed) });
+  }
+  return out;
+}
+
 // Return all tasks, sorted ascending by `order` (order is the source of truth
 // for sequence; a new task gets the smallest order and shows up on top).
 export async function getTasks() {
@@ -157,6 +179,7 @@ export async function createTask(input) {
     completed: false,
     favorite: false,
     folderId: typeof input.folderId === "string" ? input.folderId : null,
+    subtasks: [],
     order: topOrder,
     createdAt: new Date().toISOString(),
   };
@@ -186,6 +209,10 @@ export async function updateTask(id, patch) {
     createdAt: current.createdAt,
     title: "title" in patch ? patch.title.trim() : current.title,
     tags: "tags" in patch ? normalizeTags(patch.tags) : current.tags,
+    subtasks:
+      "subtasks" in patch
+        ? normalizeSubtasks(patch.subtasks)
+        : current.subtasks,
   };
 
   const next = [...tasks];
