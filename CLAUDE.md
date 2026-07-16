@@ -57,8 +57,9 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16 (fitur Subtask — keputusan out-of-scope sebelumnya dibalik atas
-permintaan eksplisit, sesi terpisah setelah fitur Folder).
+2026-07-16 (fitur Calendar View — keputusan out-of-scope sebelumnya dibalik
+atas permintaan eksplisit, sesi terpisah setelah fitur Subtask; mengikuti
+`.claude/Engineering-Spec-Calendar-View.md`).
 
 ## Sudah jadi
 
@@ -156,6 +157,33 @@ permintaan eksplisit, sesi terpisah setelah fitur Folder).
   subtask yang match ke search/filter, belum ada breakdown subtask di
   Statistik, belum ada drag-reorder subtask, belum ada bulk action subtask di
   SelectionBar — sengaja ditunda (lihat Backlog).
+- Calendar View: keputusan "Tidak ada fitur Kalender" sebelumnya **dibalik
+  atas permintaan eksplisit**, mengikuti
+  `.claude/Engineering-Spec-Calendar-View.md`. Murni view layer di atas Task
+  yang ada — tidak ada model/entity Calendar baru, tidak ada penyimpanan
+  terpisah. Toggle halaman List ↔ Calendar lewat state baru `activeView` di
+  `App.jsx` (bukan dialog popup seperti fitur lain) karena Calendar adalah
+  tampilan penuh (month grid + navigasi), bukan panel kecil. Grid bulan (6
+  minggu x 7 hari, Minggu-first) dihitung murni dari `Date` bawaan — tidak ada
+  date library baru — di `getMonthGrid` (`src/lib/groupTasksByDate.js`), yang
+  otomatis benar untuk tahun kabisat & pergantian tahun/bulan. Task
+  dikelompokkan ke tanggal lokal (bukan UTC, aturan sama seperti
+  `lib/deadline.js`) lewat `groupTasksByDate` di file yang sama; task tanpa
+  deadline tidak pernah dikelompokkan (tidak muncul di kalender). Komponen
+  `CalendarView.jsx` murni presentasional (pola sama seperti `StatsDialog`):
+  header navigasi (prev/next month via `Button`, tombol Today), grid 42 sel
+  dengan maks 3 judul task per sel lalu `+N more`, dan panel per-tanggal di
+  bawah grid. Klik task di panel me-render ulang komponen `TaskRow` yang
+  sama persis dengan List (reuse penuh inline edit mode termasuk field
+  deadline serta indikator overdue dari `getTaskStatus`) — tidak ada
+  komponen editor baru, dan edit deadline lewat kalender memakai jalur
+  `updateTask` yang sama seperti edit biasa. Kalender **mengabaikan filter**
+  List (Status/Priority/Tag/Folder/Search) — keputusan sadar agar mental
+  model tetap sederhana: kalender selalu menampilkan seluruh task berdeadline
+  terlepas dari filter yang aktif di List. Tombol "Select" dan "Sort by" hanya
+  tampil saat `activeView === "list"` (tidak relevan untuk kalender). Belum
+  ada drag-and-drop antar sel kalender untuk pindah deadline (edit hanya lewat
+  inline edit `TaskRow`) — sengaja tidak dikerjakan, sesuai spec §12.
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
@@ -330,8 +358,11 @@ Harus nyaman di HP, tablet, laptop. Desain mobile-first.
 # Di luar scope
 
 Jangan bangun ini kecuali saya minta eksplisit:
-pengingat/notifikasi, kalender, login,
+pengingat/notifikasi, login,
 sinkronisasi database, recurring task.
+
+(Kalender sudah dikerjakan — lihat "Status implementasi" di atas — sesuai
+`.claude/Engineering-Spec-Calendar-View.md`.)
 
 ---
 
