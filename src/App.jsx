@@ -18,6 +18,7 @@ import TaskRow from "./TaskRow";
 import FilterControls from "./FilterControls";
 import StatsDialog from "./StatsDialog";
 import SelectionBar from "./SelectionBar";
+import CalendarView from "./CalendarView";
 import { useTheme } from "./useTheme";
 import {
   getTasks,
@@ -117,6 +118,10 @@ export default function App() {
   // it's on, drag and edit-on-click are disabled so they don't compete.
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
+
+  // Which page is shown: the existing list, or the new Calendar view. Purely
+  // a UI switch — Calendar reads the same `tasks` state, no separate data.
+  const [activeView, setActiveView] = useState("list");
 
   // Pointer covers mouse + touch; Keyboard makes reorder operable without a
   // mouse (Space to lift, arrows to move). distance:8 stops a plain click/tap on
@@ -452,9 +457,20 @@ export default function App() {
           >
             Folders
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            aria-pressed={activeView === "calendar"}
+            onClick={() =>
+              setActiveView((v) => (v === "list" ? "calendar" : "list"))
+            }
+          >
+            {activeView === "list" ? "Calendar view" : "List view"}
+          </Button>
           {/* Always reachable while selecting so Cancel can't disappear if a
-              bulk delete empties the visible list. */}
-          {(selectionMode || visible.length > 0) && (
+              bulk delete empties the visible list. Selection has no calendar
+              equivalent, so it's List-only. */}
+          {activeView === "list" && (selectionMode || visible.length > 0) && (
             <Button
               type="button"
               variant="secondary"
@@ -463,18 +479,22 @@ export default function App() {
               {selectionMode ? "Cancel" : "Select"}
             </Button>
           )}
-          <label className="flex items-center gap-1.5 text-sm text-text">
-            Sort by
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            >
-              <option value="manual">Manual</option>
-              <option value="priority">Priority</option>
-              <option value="deadline">Deadline</option>
-            </select>
-          </label>
+          {/* Sort By only orders the list; it has no meaning for the
+              calendar grid (which is always ordered by date). */}
+          {activeView === "list" && (
+            <label className="flex items-center gap-1.5 text-sm text-text">
+              Sort by
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              >
+                <option value="manual">Manual</option>
+                <option value="priority">Priority</option>
+                <option value="deadline">Deadline</option>
+              </select>
+            </label>
+          )}
         </div>
 
         {error && (
@@ -802,74 +822,88 @@ export default function App() {
           </p>
         ) : null}
 
-        {/* Bulk-action bar, only in selection mode. Operates over `visible`. */}
-        {selectionMode && (
-          <SelectionBar
-            selectedCount={selectedIds.size}
-            visibleCount={visible.length}
-            onSelectAll={selectAllVisible}
-            onClear={clearSelection}
-            onComplete={() => handleBulkComplete(true)}
-            onUncomplete={() => handleBulkComplete(false)}
-            onDelete={handleBulkDelete}
-          />
-        )}
-
-        {/* Undo bar for the last delete (single or bulk). Persists until the
-            next task action or an Undo (see setLastDeleted calls). */}
-        {lastDeleted && lastDeleted.length > 0 && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-muted animate-[fade-slide-in_150ms_ease-out]">
-            <span className="min-w-0 truncate">
-              {lastDeleted.length === 1
-                ? `Deleted "${lastDeleted[0].title}"`
-                : `Deleted ${lastDeleted.length} tasks`}
-            </span>
-            <Button type="button" variant="secondary" onClick={handleUndo}>
-              Undo
-            </Button>
-          </div>
-        )}
-
-        {visible.length === 0 ? (
-          tasks && total > 0 ? (
-            <p className="text-sm text-text-muted">No tasks match your filters</p>
-          ) : null
+        {activeView === "calendar" ? (
+          tasks !== null && (
+            <CalendarView
+              tasks={tasks}
+              now={now}
+              folders={folders}
+              onUpdate={handleUpdate}
+              onDelete={handleDelete}
+            />
+          )
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={(e) => setActiveId(e.active.id)}
-            onDragEnd={handleDragEnd}
-            onDragCancel={() => setActiveId(null)}
-          >
-            <SortableContext
-              items={visible.map((t) => t.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
-                {visible.map((task) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    now={now}
-                    reorderable={reorderable}
-                    selectionMode={selectionMode}
-                    selected={selectedIds.has(task.id)}
-                    folders={folders}
-                    onToggleSelect={toggleSelect}
-                    onUpdate={handleUpdate}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </ul>
-            </SortableContext>
-            {/* Floating clone that follows the pointer while dragging. */}
-            <DragOverlay>
-              {activeId ? (
-                <RowOverlay task={visible.find((t) => t.id === activeId)} />
-              ) : null}
-            </DragOverlay>
-          </DndContext>
+          <>
+            {/* Bulk-action bar, only in selection mode. Operates over `visible`. */}
+            {selectionMode && (
+              <SelectionBar
+                selectedCount={selectedIds.size}
+                visibleCount={visible.length}
+                onSelectAll={selectAllVisible}
+                onClear={clearSelection}
+                onComplete={() => handleBulkComplete(true)}
+                onUncomplete={() => handleBulkComplete(false)}
+                onDelete={handleBulkDelete}
+              />
+            )}
+
+            {/* Undo bar for the last delete (single or bulk). Persists until the
+                next task action or an Undo (see setLastDeleted calls). */}
+            {lastDeleted && lastDeleted.length > 0 && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-muted animate-[fade-slide-in_150ms_ease-out]">
+                <span className="min-w-0 truncate">
+                  {lastDeleted.length === 1
+                    ? `Deleted "${lastDeleted[0].title}"`
+                    : `Deleted ${lastDeleted.length} tasks`}
+                </span>
+                <Button type="button" variant="secondary" onClick={handleUndo}>
+                  Undo
+                </Button>
+              </div>
+            )}
+
+            {visible.length === 0 ? (
+              tasks && total > 0 ? (
+                <p className="text-sm text-text-muted">No tasks match your filters</p>
+              ) : null
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={(e) => setActiveId(e.active.id)}
+                onDragEnd={handleDragEnd}
+                onDragCancel={() => setActiveId(null)}
+              >
+                <SortableContext
+                  items={visible.map((t) => t.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
+                    {visible.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        now={now}
+                        reorderable={reorderable}
+                        selectionMode={selectionMode}
+                        selected={selectedIds.has(task.id)}
+                        folders={folders}
+                        onToggleSelect={toggleSelect}
+                        onUpdate={handleUpdate}
+                        onDelete={handleDelete}
+                      />
+                    ))}
+                  </ul>
+                </SortableContext>
+                {/* Floating clone that follows the pointer while dragging. */}
+                <DragOverlay>
+                  {activeId ? (
+                    <RowOverlay task={visible.find((t) => t.id === activeId)} />
+                  ) : null}
+                </DragOverlay>
+              </DndContext>
+            )}
+          </>
         )}
       </main>
     </div>
