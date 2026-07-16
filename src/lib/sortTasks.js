@@ -6,6 +6,10 @@
 // Sort and filter are separate concerns: filtering lives in getVisibleTasks.js,
 // this file only orders. `completed` never affects ordering — done tasks are
 // not sunk to the bottom.
+//
+// `favorite` is a pin, not a Sort By option: favorited tasks always float to
+// the top, in every sortBy mode, and non-favorites fill in below them. Within
+// each of those two groups, the normal sortBy ordering still applies.
 
 // Explicit priority ranking. NEVER sort the priority strings alphabetically
 // ("high" < "low" < "medium" would be wrong); high beats medium beats low.
@@ -17,7 +21,7 @@ function byOrder(a, b) {
   return a.order - b.order;
 }
 
-export function sortTasks(tasks, sortBy) {
+function orderWithin(tasks, sortBy) {
   const copy = [...tasks];
 
   if (sortBy === "priority") {
@@ -42,4 +46,10 @@ export function sortTasks(tasks, sortBy) {
 
   // "manual" (default): ascending by `order`.
   return copy.sort(byOrder);
+}
+
+export function sortTasks(tasks, sortBy) {
+  const favorites = tasks.filter((t) => t.favorite);
+  const rest = tasks.filter((t) => !t.favorite);
+  return [...orderWithin(favorites, sortBy), ...orderWithin(rest, sortBy)];
 }

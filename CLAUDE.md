@@ -57,7 +57,7 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16 (halaman statistik dialog).
+2026-07-16 (fitur Favorite/pin task).
 
 ## Sudah jadi
 
@@ -106,6 +106,17 @@ Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
   (`src/lib/getTaskStats.js`). Komponen presentasional `StatsDialog.jsx`
   mengikuti pola `FilterControls`. Tombol "Statistics" di header, dialog native
   `<dialog>` dengan pola sama seperti Filters (backdrop-click, Escape, Done).
+- Favorite/pin task: field `favorite` (boolean) di model task, di-sanitasi di
+  `sanitizeTask` dan default `false` di `createTask` (`src/lib/storage.js`),
+  pola sama persis dengan `completed`. Toggle lewat tombol bintang di
+  `TaskRow.jsx` (dekat checkbox complete), pakai `onUpdate` generic yang sudah
+  ada — tidak ada fungsi storage baru. Favorit **selalu mengambang ke atas**
+  di ketiga mode Sort By (Manual/Priority/Deadline): `sortTasks.js` mempartisi
+  task jadi favorit/non-favorit dulu, lalu mengurutkan tiap partisi dengan
+  logika sort yang sama seperti sebelumnya. Ini keputusan sadar: favorit bukan
+  opsi Sort By ke-4, tapi pin yang berlaku di semua mode. Belum ada filter
+  "Favorites only" dan belum ada bulk action favorite di `SelectionBar` —
+  sengaja ditunda (lihat Backlog).
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
@@ -113,6 +124,10 @@ Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
 - Wrapper batch opsional di `storage.js` (`deleteTasks`/`restoreTasks`/
   `updateTasks`, satu tulisan per aksi) kalau list membesar — sekarang loop
   sekuensial sudah cukup.
+- Filter "Favorites only" di `FilterControls`/`getVisibleTasks` (dimensi baru,
+  AND dengan filter lain) — ditunda sampai diminta.
+- Bulk action "Favorite/Unfavorite selected" di `SelectionBar` (mirror pola
+  bulk complete/uncomplete) — ditunda sampai diminta.
 
 ---
 
@@ -236,7 +251,7 @@ sinkronisasi database, folder, subtask, recurring task.
    Tunggu saya setujui rencananya.
 2. Satu fitur per sesi. Jangan lari ke depan.
 3. Setelah selesai, beri tahu saya **cara memverifikasinya secara manual** —
-   langkah konkret, bukan "silakan dicoba".
+   langkah konkret, bukan "silakan dicoba" jika memerlukan verifikasi secara manual oleh user, selain itu otomatis.
 4. Kalau saya tanya kenapa kamu menulis sesuatu, jelaskan sejujurnya. Termasuk
    kalau itu pilihan yang lemah.
 5. **PENTING: Setiap sesi selesai, perbarui bagian "Status implementasi" di file
@@ -244,3 +259,32 @@ sinkronisasi database, folder, subtask, recurring task.
    "Backlog" atau "Di luar scope" jika relevan, dan update tanggal di baris
    "Diperbarui". Ini menjaga CLAUDE.md tetap akurat sebagai single source of
    truth untuk apa yang sudah dikerjakan.
+
+## Git Workflow
+
+Setelah menyelesaikan setiap task atau perubahan yang diminta:
+
+1. Pastikan seluruh perubahan telah selesai dan project tetap dapat dijalankan.
+2. Jalankan lint, formatter, dan test yang tersedia.
+3. Review kembali perubahan sebelum melakukan commit.
+4. Buat commit dengan pesan yang jelas mengikuti Conventional Commits.
+5. Push perubahan ke branch kerja (jangan langsung ke `main`).
+6. Setelah push berhasil, buat Pull Request ke repository GitHub menggunakan GitHub CLI (`gh`) atau integrasi GitHub yang tersedia.
+7. Isi Pull Request dengan:
+   - Ringkasan perubahan
+   - Alasan perubahan
+   - Cara melakukan pengujian
+   - Catatan tambahan jika ada
+8. Setelah PR berhasil dibuat, tampilkan URL Pull Request kepada pengguna.
+
+Jika pembuatan PR gagal karena izin, autentikasi, atau repository belum terhubung, hentikan proses tersebut dan jelaskan penyebabnya beserta langkah yang perlu dilakukan pengguna.
+
+## Mandatory GitHub Pull Request
+
+Setiap kali menyelesaikan implementasi fitur, bug fix, refactor, atau perubahan kode:
+
+- Wajib membuat commit.
+- Wajib melakukan push ke branch aktif.
+- Wajib membuat Pull Request ke branch target menggunakan GitHub CLI (`gh pr create`) atau integrasi GitHub yang tersedia.
+- Jangan menganggap pekerjaan selesai sampai Pull Request berhasil dibuat atau terdapat kegagalan yang tidak dapat diatasi (misalnya autentikasi atau permission).
+- Jika gagal membuat PR, laporkan penyebabnya dan tampilkan perintah yang harus dijalankan pengguna.
