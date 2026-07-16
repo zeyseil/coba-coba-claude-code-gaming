@@ -19,6 +19,19 @@ export function toISODeadline(dateStr, timeStr) {
   return new Date(y, m - 1, d, hh, mm, 0, 0).toISOString();
 }
 
+// Format an ISO deadline for display, per spec: date only when the local time is
+// 23:59 (the date-only default), date + time otherwise. null -> "". Uses local
+// getters so the shown wall clock matches what toISODeadline stored.
+export function formatDeadline(iso) {
+  if (!iso) return "";
+  const dt = new Date(iso);
+  const date = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+  const hh = dt.getHours();
+  const mm = dt.getMinutes();
+  if (hh === 23 && mm === 59) return date;
+  return `${date} ${pad(hh)}:${pad(mm)}`;
+}
+
 // Split an ISO string back into local date + time inputs for prefilling a form.
 // null -> both empty. Using the local getters recovers the same wall clock that
 // toISODeadline stored, so the round-trip is lossless in any timezone.

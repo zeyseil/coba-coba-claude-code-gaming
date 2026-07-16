@@ -51,6 +51,34 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 
 ---
 
+# Status implementasi
+
+Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
+2026-07-16.
+
+## Sudah jadi
+
+- Lapisan penyimpanan terisolasi di `src/lib/storage.js` (semua fungsi async).
+- Task CRUD: tambah, edit (klik judul), toggle complete, hapus.
+- Prioritas + deadline + status precedence (`src/lib/taskStatus.js`).
+- Tag many-to-many (input + normalisasi di storage).
+- Search + filter multi-dimensi via `getVisibleTasks` (`src/lib/getVisibleTasks.js`).
+- Progress bar dari seluruh task + baris "Showing X of Y tasks".
+- Token warna + komponen `Button`, dark mode, responsif (satu breakpoint `sm:`).
+- Sort By: Manual / Priority / Deadline (`src/lib/sortTasks.js`).
+- Reorder manual: drag & drop native + tombol ↑↓ (aktif hanya saat Manual).
+- Tampilan deadline sesuai aturan "Deadline > Tampilan" (`formatDeadline`).
+
+## Backlog (belum dikerjakan — catatan, bukan janji)
+
+- Validasi/sanitasi bentuk tiap task saat dibaca di `readState()` supaya data
+  localStorage yang rusak tidak meng-crash app.
+- Trim input tag sebelum cek kosong (tag berisi spasi kini masuk lalu hilang
+  diam-diam saat disimpan).
+- Semantik keyboard/tombol untuk span judul yang diklik untuk edit (a11y).
+
+---
+
 # Spesifikasi
 
 Spec ini sudah diputuskan. Jangan diubah tanpa saya minta.
