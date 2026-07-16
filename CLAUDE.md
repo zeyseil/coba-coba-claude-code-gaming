@@ -57,7 +57,10 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-17 (sesi terbaru: perapian interaksi UI — touch target checkbox
+2026-07-17 (sesi kedua hari ini: warna semantik untuk tombol Complete/
+Delete/Uncomplete — 3 pasang token warna baru, lihat entri "Warna semantik
+tombol aksi" di bawah. Sesi pertama hari ini: perapian interaksi UI — touch
+target checkbox
 seleksi (item Backlog terakhir dari audit, sekarang ditutup), hover/press
 tombol subtask, checkbox complete jadi tombol Complete/Uncomplete berkonfirmasi,
 perbaikan bug centering dialog, dan filter jadi draft sampai Done ditekan;
@@ -76,6 +79,32 @@ kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi eksplisit
 ke user, lihat detail di bawah).
 
 ## Sudah jadi
+
+- Warna semantik untuk tombol aksi (`Button.jsx`): Complete = hijau, Delete =
+  merah, Uncomplete = abu-abu (beda dari abu-abu chip subtask). Sebelumnya
+  Complete/Uncomplete memakai variant `secondary` (netral) dan Delete memakai
+  `danger` yang cuma teks merah dengan border transparan (nyaris tak
+  terlihat) — sekarang ketiganya **filled solid** (latar penuh warna),
+  dikonfirmasi eksplisit ke user karena ini keputusan yang mengubah sistem
+  token warna yang baru saja diaudit. **6 token warna baru** ditambah ke
+  `index.css` (light+dark, plus re-export `@theme inline`, mengikuti pola
+  pasangan `-bg`/`-fg` yang sudah ada seperti `priority-*`): `success-bg`/
+  `success-fg` (hijau), `danger-bg`/`danger-fg` (merah — token terpisah dari
+  `status-overdue` yang tetap dipakai untuk teks peringatan "⚠ Overdue" dan
+  pesan error, bukan direplace), `neutral-bg`/`neutral-fg` (abu-abu, sengaja
+  beda dari `progress-track` yang dipakai chip subtask/folder/recurring badge
+  supaya dua elemen abu-abu itu tidak menyatu). Total token warna naik dari
+  20 jadi 26. Variant `danger` di `Button.jsx` diubah jadi filled — ini
+  **otomatis mengubah semua tombol Delete/Confirm-delete di app** (TaskRow,
+  SubtaskList, Manage Folders, Recurring templates, bulk delete di
+  `SelectionBar`), bukan cuma di TaskRow — dikonfirmasi eksplisit ke user
+  supaya "satu variant, satu arti" konsisten di semua tempat, bukan
+  exception khusus TaskRow. Tombol "Confirm" di dialog konfirmasi Complete
+  juga diubah dari `primary` (biru) ke `success` (hijau) — bukan permintaan
+  eksplisit, tapi keputusan mengikuti akal sehat karena tombol itu melakukan
+  aksi semantik yang identik (menyelesaikan task) dengan tombol Complete
+  yang memicunya. Tombol Save/Cancel dan variant `secondary`/`ghost` lain
+  **tidak disentuh** — perubahan warna hanya untuk 3 aksi yang diminta.
 
 - Perapian interaksi UI (bukan fitur baru; a11y + feedback + satu bug fix).
   Tanpa dependency, token, maupun komponen baru. Yang dikerjakan:
@@ -726,3 +755,151 @@ Saat melakukan review:
 - Prioritaskan kesederhanaan, maintainability, dan konsistensi arsitektur dibanding menambah fitur.
 - Jika terdapat satu opsi yang jelas lebih baik, rekomendasikan opsi tersebut secara eksplisit.
 - Hindari jawaban yang terlalu diplomatis seperti "semuanya tergantung kebutuhan" apabila terdapat rekomendasi teknis yang lebih masuk akal.
+
+# Failure Handling & Recovery Policy
+
+Apabila suatu pekerjaan tidak dapat diselesaikan karena keterbatasan environment, tooling, permission, jaringan, autentikasi, atau keterbatasan Claude Code, jangan berhenti hanya dengan menampilkan error.
+
+Selalu lakukan langkah berikut.
+
+## 1. Identifikasi penyebab
+
+Jelaskan secara spesifik:
+
+- apa yang gagal
+- pada langkah mana gagal
+- penyebab paling mungkin
+- apakah penyebab berasal dari:
+  - tooling
+  - permission
+  - environment
+  - dependency
+  - konfigurasi
+  - bug aplikasi
+  - atau faktor eksternal
+
+Jangan hanya menampilkan pesan error mentah.
+
+---
+
+## 2. Tentukan apakah dapat diperbaiki otomatis
+
+Jika dapat diperbaiki sendiri:
+
+- lakukan perbaikan
+- ulangi proses
+
+Jangan meminta bantuan user.
+
+---
+
+## 3. Jika membutuhkan tindakan manual
+
+Jika memang membutuhkan tindakan pengguna, tampilkan:
+
+### Manual Action Required
+
+berisi langkah-langkah yang harus dilakukan user secara berurutan.
+
+Contoh:
+
+1. Login ulang GitHub CLI
+2. Jalankan `gh auth login`
+3. Pilih HTTPS
+4. Verifikasi akun
+5. Jalankan kembali task
+
+---
+
+## 4. Berikan alasan
+
+Setelah langkah manual, jelaskan:
+
+- mengapa langkah tersebut diperlukan
+- mengapa Claude tidak dapat melakukannya sendiri
+- keterbatasan apa yang sedang terjadi
+
+---
+
+## 5. Berikan dampak
+
+Jelaskan:
+
+- apakah pekerjaan sudah aman
+- apakah data berubah
+- apakah perubahan sudah tersimpan
+- apakah user bisa melanjutkan tanpa kehilangan pekerjaan
+
+---
+
+## 6. Berikan langkah selanjutnya
+
+Selalu akhiri dengan:
+
+Next Action
+
+berisi satu tindakan yang paling direkomendasikan setelah user selesai melakukan langkah manual.
+
+---
+
+## 7. Format jawaban
+
+Gunakan format berikut.
+
+❌ Problem
+
+...
+
+🔍 Cause
+
+...
+
+✅ Automatic Recovery
+
+...
+
+👤 Manual Action Required
+
+1.
+2.
+3.
+
+💡 Why
+
+...
+
+➡ Next Action
+
+...
+
+## Error Classification
+
+Kelompokkan setiap kegagalan ke salah satu kategori berikut.
+
+- Tool Limitation
+- Environment Limitation
+- Permission Issue
+- Authentication Issue
+- Dependency Issue
+- Configuration Issue
+- Build Error
+- Runtime Error
+- Test Failure
+- Lint Failure
+- Browser Automation Failure
+- Unknown
+
+Gunakan kategori tersebut saat menjelaskan penyebab.
+
+Claude tidak boleh mengakhiri pekerjaan hanya dengan menampilkan error.
+
+Sebelum mengakhiri respons, Claude WAJIB memberikan:
+
+- diagnosis
+- penyebab
+- solusi otomatis yang sudah dicoba
+- solusi manual jika diperlukan
+- alasan mengapa solusi manual diperlukan
+- langkah berikutnya
+
+Apabila tidak ada solusi yang diketahui, jelaskan secara eksplisit mengapa tidak ada solusi yang dapat diberikan.

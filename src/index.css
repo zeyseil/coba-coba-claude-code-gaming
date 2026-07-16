@@ -32,6 +32,12 @@
   --color-disabled-fg: #9ca3af;
   --color-overlay: rgba(0, 0, 0, 0.4);
   --color-row-hover: #f1f2f4;
+  --color-success-bg: #15803d;
+  --color-success-fg: #ffffff;
+  --color-danger-bg: #dc2626;
+  --color-danger-fg: #ffffff;
+  --color-neutral-bg: #4b5563;
+  --color-neutral-fg: #ffffff;
 }
 
 .dark {
@@ -55,6 +61,12 @@
   --color-disabled-fg: #6b7280;
   --color-overlay: rgba(0, 0, 0, 0.6);
   --color-row-hover: #2a2a2f;
+  --color-success-bg: #4ade80;
+  --color-success-fg: #0b1220;
+  --color-danger-bg: #f87171;
+  --color-danger-fg: #0b1220;
+  --color-neutral-bg: #9ca3af;
+  --color-neutral-fg: #0b1220;
 }
 
 /* Expose the tokens to Tailwind so they become utilities (bg-bg, text-text, ...). */
@@ -79,6 +91,12 @@
   --color-disabled-fg: var(--color-disabled-fg);
   --color-overlay: var(--color-overlay);
   --color-row-hover: var(--color-row-hover);
+  --color-success-bg: var(--color-success-bg);
+  --color-success-fg: var(--color-success-fg);
+  --color-danger-bg: var(--color-danger-bg);
+  --color-danger-fg: var(--color-danger-fg);
+  --color-neutral-bg: var(--color-neutral-bg);
+  --color-neutral-fg: var(--color-neutral-fg);
 }
 
 /*
