@@ -6,14 +6,19 @@ const BASE =
 
 // Hover and active are gated behind `enabled:` so a disabled button stays
 // visually inert instead of still reacting to the pointer.
+// success/danger/neutral are filled (bg + fg pair), matching primary's style
+// rather than secondary/ghost's border-only look — these three carry a
+// specific meaning (complete / delete / undo-complete) that a solid color
+// communicates faster than a border does.
 const VARIANTS = {
   primary: "bg-accent text-accent-fg enabled:hover:opacity-90",
   secondary:
     "border border-border bg-surface text-text enabled:hover:border-accent",
   ghost:
     "border border-transparent text-text-muted enabled:hover:border-accent",
-  danger:
-    "border border-transparent text-status-overdue enabled:hover:border-accent",
+  danger: "bg-danger-bg text-danger-fg enabled:hover:opacity-90",
+  success: "bg-success-bg text-success-fg enabled:hover:opacity-90",
+  neutral: "bg-neutral-bg text-neutral-fg enabled:hover:opacity-90",
 };
 
 export default function Button({ variant = "secondary", className = "", ...props }) {

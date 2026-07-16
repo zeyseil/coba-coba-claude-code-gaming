@@ -226,7 +226,7 @@ export default function TaskRow({
           {task.completed ? (
             <Button
               type="button"
-              variant="secondary"
+              variant="neutral"
               onClick={() => onUpdate(task.id, { completed: false })}
               className="w-full sm:w-auto enabled:active:scale-95"
             >
@@ -235,7 +235,7 @@ export default function TaskRow({
           ) : (
             <Button
               type="button"
-              variant="secondary"
+              variant="success"
               onClick={() => completeDialog.current.showModal()}
               className="w-full sm:w-auto enabled:active:scale-95"
             >
@@ -456,7 +456,7 @@ export default function TaskRow({
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <Button
               type="button"
-              variant="primary"
+              variant="success"
               aria-label={`Confirm complete: ${task.title}`}
               onClick={() => {
                 onUpdate(task.id, { completed: true });
