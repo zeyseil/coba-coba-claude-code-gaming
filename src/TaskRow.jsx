@@ -341,6 +341,11 @@ export default function TaskRow({
               {folders.find((f) => f.id === task.folderId)?.name ?? "?"}
             </span>
           )}
+          {task.templateId && (
+            <span className="inline-flex items-center gap-1 rounded-lg border border-border bg-progress-track px-2 py-1 text-xs text-text-muted">
+              ↻ Recurring
+            </span>
+          )}
           {task.tags.map((tag) => (
             <span
               key={tag}

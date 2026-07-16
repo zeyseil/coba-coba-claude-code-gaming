@@ -57,9 +57,11 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16 (fitur Calendar View — keputusan out-of-scope sebelumnya dibalik
-atas permintaan eksplisit, sesi terpisah setelah fitur Subtask; mengikuti
-`.claude/Engineering-Spec-Calendar-View.md`).
+2026-07-16 (fitur Recurring Task — keputusan out-of-scope sebelumnya dibalik
+atas permintaan eksplisit, sesi terpisah setelah fitur Calendar View;
+mengikuti `.claude/Engineering-Spec-Recurring-Task.md` sebagai referensi,
+bukan kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi
+eksplisit ke user, lihat detail di bawah).
 
 ## Sudah jadi
 
@@ -184,6 +186,52 @@ atas permintaan eksplisit, sesi terpisah setelah fitur Subtask; mengikuti
   tampil saat `activeView === "list"` (tidak relevan untuk kalender). Belum
   ada drag-and-drop antar sel kalender untuk pindah deadline (edit hanya lewat
   inline edit `TaskRow`) — sengaja tidak dikerjakan, sesuai spec §12.
+- Recurring Task: keputusan "Tidak ada fitur Recurring Task" sebelumnya
+  **dibalik atas permintaan eksplisit**, mengikuti
+  `.claude/Engineering-Spec-Recurring-Task.md`. Spec itu punya beberapa gap
+  terhadap kebutuhan nyata (RecurringTemplate di spec cuma
+  `{title, recurrence, active}`, tanpa field tanggal maupun
+  priority/tags/folder) — diselesaikan lewat konfirmasi eksplisit ke user
+  sebelum implementasi, bukan tebakan:
+  (1) instance mewarisi title + priority + tags + folderId dari template
+  (bukan title-only seperti literal spec);
+  (2) `RecurringTemplate` diberi field `startDate` sendiri sebagai anchor
+  instance pertama; instance berikutnya dihitung dari deadline instance yang
+  BARU SAJA di-complete + interval (bukan dari `startDate` template setiap
+  kali), supaya edit manual deadline sebuah instance tidak bikin drift ke
+  instance berikutnya — ini juga menyelesaikan edge case "lama offline" di
+  spec §9: generate hanya terjadi saat user melakukan Complete
+  (event-driven, bukan cron/time-based), jadi tidak perlu catch-up logic
+  untuk periode yang terlewat saat app ditutup;
+  (3) entry point-nya dialog terpisah "Recurring" di header (pola identik
+  "Manage Folders", `src/App.jsx`), BUKAN toggle di New Task dialog — task
+  instance tidak pernah dibuat manual lewat New Task, hanya lewat engine.
+  Engine murni tanpa I/O di `src/lib/recurringEngine.js`
+  (`computeNextDeadline`, `buildInstanceFromTemplate`) — tidak ada logika
+  recurrence di komponen React (spec §10, §13), dan terpisah total dari
+  Calendar (Calendar cuma baca `deadline` seperti task biasa, tidak ada
+  kode kalender yang diubah). Schema localStorage naik ke versi 4
+  (`{ version, tasks, folders, templates }`); migrasi mengikuti pola yang
+  sudah ada di `storage.js` — tidak ada fungsi migrasi terpisah, `readState()`
+  menerima versi lama sebagai kompatibel lalu `sanitizeTask` default
+  `templateId: null` untuk task lama (pola sama seperti `folderId`/
+  `subtasks` sebelumnya), plus `sanitizeTemplate` baru (pola sama seperti
+  `sanitizeFolder`). Hapus template = unassign (`templateId: null`) di semua
+  instance terkait, BUKAN cascade delete — instance lama (completed maupun
+  belum) tetap ada, pola sama persis seperti `deleteFolder` (spec §5.6,
+  §13 "Jangan reset task lama"). Edge case akhir bulan & tahun kabisat
+  (spec §9) ditangani lewat clamp ke hari terakhir bulan tujuan di
+  `computeNextDeadline` (mis. 31 Jan + 1 bulan → 28/29 Feb, bukan 3 Mar).
+  Instance tampil sebagai task biasa + badge read-only "↻ Recurring" di
+  `TaskRow.jsx` (spec §8) — tidak ada UI untuk edit recurrence dari task
+  row, recurrence hanya bisa diubah lewat dialog "Recurring". Yang sengaja
+  TIDAK dikerjakan sesuai spec §2/§13: Google Calendar Sync, Reminder/
+  notifikasi, AI, RRULE kompleks (skip weekday-of-week rules dsb — hanya
+  interval sederhana), multi-timezone, filter/bulk-action/statistik khusus
+  recurring (konsisten dengan pola Favorite/Folder — ditunda, lihat
+  Backlog), dan edit field template selain title/active setelah dibuat
+  (priority/tags/folder/frequency/interval terkunci saat create; belum ada
+  form edit penuh — sengaja ditunda).
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
@@ -203,6 +251,12 @@ atas permintaan eksplisit, sesi terpisah setelah fitur Subtask; mengikuti
 - Drag-reorder subtask di dalam checklist — ditunda sampai diminta.
 - Bulk action subtask (mis. "complete all subtasks") di `SelectionBar` —
   ditunda sampai diminta.
+- Form edit penuh untuk recurring template (priority/tags/folder/frequency/
+  interval setelah dibuat; sekarang hanya title yang rename-able dan
+  active/paused yang bisa di-toggle) — ditunda sampai diminta.
+- Filter "Recurring only" / bulk action recurring di `SelectionBar` —
+  ditunda sampai diminta.
+- Breakdown recurring di halaman Statistik — ditunda sampai diminta.
 
 ---
 
@@ -223,6 +277,7 @@ Task {
   favorite    boolean
   folderId    string | null   (uuid folder, atau null = tanpa folder)
   subtasks    Subtask[]       (boleh kosong)
+  templateId  string | null   (uuid RecurringTemplate, atau null = task biasa)
   order       number
   createdAt   string   (ISO 8601)
 }
@@ -239,12 +294,25 @@ Folder {
   order       number
   createdAt   string   (ISO 8601)
 }
+
+RecurringTemplate {
+  id          string   (uuid)
+  title       string   (wajib, tidak boleh kosong/whitespace)
+  priority    "high" | "medium" | "low"   (default "medium")
+  tags        string[]        (boleh kosong)
+  folderId    string | null   (uuid folder, atau null = tanpa folder)
+  recurrence  { frequency: "daily"|"weekly"|"monthly"|"yearly", interval: number (>=1) }
+  startDate   string   (ISO 8601, deadline instance pertama)
+  active      boolean  (default true; nonaktif = tidak generate instance baru)
+  order       number
+  createdAt   string   (ISO 8601)
+}
 ```
 
 Data disimpan di localStorage dengan **versi skema**:
 
 ```
-{ "version": 3, "tasks": [...], "folders": [...] }
+{ "version": 4, "tasks": [...], "folders": [...], "templates": [...] }
 ```
 
 Kalau skema berubah nanti, `storage.js` yang menangani migrasi. Jangan sampai
@@ -359,10 +427,11 @@ Harus nyaman di HP, tablet, laptop. Desain mobile-first.
 
 Jangan bangun ini kecuali saya minta eksplisit:
 pengingat/notifikasi, login,
-sinkronisasi database, recurring task.
+sinkronisasi database.
 
-(Kalender sudah dikerjakan — lihat "Status implementasi" di atas — sesuai
-`.claude/Engineering-Spec-Calendar-View.md`.)
+(Kalender dan Recurring Task sudah dikerjakan — lihat "Status implementasi"
+di atas — sesuai `.claude/Engineering-Spec-Calendar-View.md` dan
+`.claude/Engineering-Spec-Recurring-Task.md`.)
 
 ---
 
