@@ -3,7 +3,13 @@ import ThemeToggle from "./ThemeToggle";
 import TaskRow from "./TaskRow";
 import FilterControls from "./FilterControls";
 import { useTheme } from "./useTheme";
-import { getTasks, createTask, updateTask, deleteTask } from "./lib/storage";
+import {
+  getTasks,
+  createTask,
+  updateTask,
+  deleteTask,
+  reorderTasks,
+} from "./lib/storage";
 import { toISODeadline } from "./lib/deadline";
 import { getVisibleTasks } from "./lib/getVisibleTasks";
 import { sortTasks } from "./lib/sortTasks";
@@ -71,6 +77,11 @@ export default function App() {
     filters.search.trim() !== "" ||
     filters.tags.length > 0;
 
+  // Reorder is only allowed on the full, manually-ordered list: Sort By = Manual
+  // AND no active filter/search. Derived, not state. Because sortBy is seeded
+  // from getStoredSort(), this is correct from the first render after reload.
+  const reorderable = sortBy === "manual" && !filterActive;
+
   function addNewTag() {
     if (newTagInput === "") return;
     setNewTags([...newTags, newTagInput]);
@@ -124,6 +135,24 @@ export default function App() {
     } catch (err) {
       setError(String(err?.message ?? err));
       return false;
+    }
+  }
+
+  // Move the task at index `from` to index `to` within the visible list. Since
+  // reorder is gated to the unfiltered manual list, `visible` is the full task
+  // set in order, so its ids form the complete permutation we hand to storage.
+  async function handleReorder(from, to) {
+    if (from === to) return; // dropping onto itself is a no-op
+    try {
+      const ids = visible.map((t) => t.id);
+      const next = [...ids];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      await reorderTasks(next);
+      setError(null);
+      await refresh();
+    } catch (err) {
+      setError(String(err?.message ?? err));
     }
   }
 
@@ -260,11 +289,15 @@ export default function App() {
           ) : null
         ) : (
           <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
-            {visible.map((task) => (
+            {visible.map((task, i) => (
               <TaskRow
                 key={task.id}
                 task={task}
                 now={now}
+                index={i}
+                total={visible.length}
+                reorderable={reorderable}
+                onReorder={handleReorder}
                 onUpdate={handleUpdate}
                 onDelete={handleDelete}
               />
