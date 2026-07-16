@@ -59,7 +59,7 @@ export default function SubtaskList({ subtasks, onChange }) {
                 type="checkbox"
                 checked={subtask.completed}
                 onChange={() => toggleSubtask(subtask.id)}
-                className="size-4 shrink-0 [accent-color:var(--color-accent)]"
+                className="size-4 shrink-0 [accent-color:var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               />
               {renamingId === subtask.id ? (
                 <form

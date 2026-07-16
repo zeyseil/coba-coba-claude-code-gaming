@@ -57,7 +57,10 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16 (sesi kedua hari ini, setelah fitur Recurring Task: breakdown
+2026-07-16 (sesi ketiga hari ini: audit UI seluruh app terhadap
+`.claude/DESIGN_SYSTEM.md` — bukan fitur baru, murni perbaikan a11y &
+konsistensi, lihat entri "Audit Design System" di bawah. Sesi kedua hari ini,
+setelah fitur Recurring Task: breakdown
 folder/subtask/recurring template di Statistik, plus perapian baris
 `TaskRow` — drag handle permanen kiri dan checkbox complete/delete pindah ke
 edit mode, lihat entri terkait di bawah; fitur Recurring Task sendiri —
@@ -68,6 +71,38 @@ kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi eksplisit
 ke user, lihat detail di bawah).
 
 ## Sudah jadi
+
+- Audit Design System (audit UI seluruh app terhadap
+  `.claude/DESIGN_SYSTEM.md`). Hasil audit: **nol hardcoded color** di seluruh
+  `src/` (semua warna lewat 20 token di `index.css`, di-expose ke Tailwind v4
+  lewat `@theme inline` — tidak ada `tailwind.config.*`), radius seragam
+  `rounded-lg`, dan hanya satu `shadow-lg`. Yang diperbaiki:
+  (1) **focus ring** — checkbox seleksi di `TaskRow` pakai `appearance-none`
+  (perlu agar `rounded-full` dihormati) yang diam-diam ikut membuang focus
+  ring native, jadi checkbox itu tidak terlihat sama sekali oleh pengguna
+  keyboard; ring eksplisit sekarang wajib ada di sana. Ring yang sama
+  ditambahkan ke checkbox complete (`TaskRow`), checkbox subtask
+  (`SubtaskList`), dan 5 grup radio/checkbox di `FilterControls` supaya
+  seluruh app punya satu indikator fokus;
+  (2) `ThemeToggle` — sebelumnya satu-satunya tombol header yang di-style
+  manual (tanpa ring, tanpa touch target 44px); sekarang render lewat
+  komponen `Button` variant `secondary` — menutup gap sekaligus menghapus
+  duplikasi class;
+  (3) `Button` — `active:opacity-80` dan `hover:` tiap variant diberi prefix
+  `enabled:` supaya tombol disabled tidak lagi merespons pointer, plus
+  `disabled:cursor-not-allowed`;
+  (4) `CalendarView` — chip task: `rounded` → `rounded-lg` (satu-satunya bare
+  `rounded` di codebase) dan `text-[11px]` → `text-xs` (11px di luar skala
+  tipografi Tailwind). Diverifikasi di preview: 42 sel kalender, nol overflow;
+  (5) **touch target** — bintang favorit (15×18px) dan tombol expand subtask
+  (tinggi 26px) di bawah 44px di mobile; diberi `min-h-11 sm:min-h-0`
+  (pola yang sudah dipakai `Button`/`FIELD`, bukan pola baru) sehingga mobile
+  44×44 dan desktop tetap ringkas. Ini temuan di luar rencana awal —
+  dikerjakan atas konfirmasi eksplisit user.
+  Konstanta `FIELD` di `TaskRow` dan `SubtaskList` **sengaja dibiarkan
+  terduplikasi**: isinya sudah identik kecuali lebar, dan aturan "jangan
+  abstraksi sebelum 3 pemakai nyata" belum terpenuhi.
+  Tidak ada token baru, komponen baru, maupun dependency baru.
 
 - Lapisan penyimpanan terisolasi di `src/lib/storage.js` (semua fungsi async).
 - Task CRUD: tambah, edit (klik judul), toggle complete, hapus.
@@ -267,6 +302,11 @@ ke user, lihat detail di bawah).
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
+- Checkbox seleksi (`TaskRow`, selection mode) berukuran 20×20px di mobile
+  (`size-5`). Di bawah 24×24 yang diminta WCAG 2.2 AA (2.5.8 Target Size),
+  meski ukuran ini sengaja dipilih saat desain. Ditemukan saat audit Design
+  System; tidak diubah karena di luar scope yang disetujui — angkat lagi kalau
+  target size mau ditegakkan.
 - Animasi enter/exit per-baris task (butuh presence-tracking; ditunda).
 - Wrapper batch opsional di `storage.js` (`deleteTasks`/`restoreTasks`/
   `updateTasks`, satu tulisan per aksi) kalau list membesar — sekarang loop
