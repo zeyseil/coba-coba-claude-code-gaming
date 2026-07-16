@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { getTaskStatus } from "./lib/taskStatus";
-import { toISODeadline, fromISODeadline } from "./lib/deadline";
+import { toISODeadline, fromISODeadline, formatDeadline } from "./lib/deadline";
 import Button from "./Button";
 
 // Static value->className map for the priority badge. Presentation only; the
@@ -221,6 +221,11 @@ export default function TaskRow({
           >
             {task.priority}
           </span>
+          {task.deadline && (
+            <span className="text-xs text-text-muted">
+              {formatDeadline(task.deadline)}
+            </span>
+          )}
           {status === "overdue" && (
             <span className="inline-flex items-center gap-1 text-xs font-medium text-status-overdue">
               ⚠ Overdue
