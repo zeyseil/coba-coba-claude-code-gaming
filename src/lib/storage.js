@@ -4,23 +4,23 @@
 // sync today, but the API is shaped for a future async backend).
 
 const STORAGE_KEY = "tasks";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const PRIORITIES = ["high", "medium", "low"];
 
 // Read and validate the persisted state. On corrupt/invalid/unknown-version
-// data, warn and return an empty task list WITHOUT overwriting the bad data —
-// it only gets replaced on the next successful write.
+// data, warn and return empty state WITHOUT overwriting the bad data — it
+// only gets replaced on the next successful write.
 function readState() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (raw === null) return [];
+  if (raw === null) return { tasks: [], folders: [] };
 
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
     console.warn("storage: could not parse tasks, ignoring corrupt data", e);
-    return [];
+    return { tasks: [], folders: [] };
   }
 
   if (
@@ -30,7 +30,7 @@ function readState() {
     !Array.isArray(parsed.tasks)
   ) {
     console.warn("storage: unexpected schema, ignoring", parsed);
-    return [];
+    return { tasks: [], folders: [] };
   }
 
   // Sanitize each task so corrupt localStorage can't crash the app downstream
@@ -38,9 +38,17 @@ function readState() {
   // fields to safe defaults, but DROP tasks missing a hard requirement (id or a
   // real title) since we can't invent those. `order` falls back to the array
   // index here, so a missing/invalid order still yields a stable sequence.
-  return parsed.tasks
+  const tasks = parsed.tasks
     .map((raw, index) => sanitizeTask(raw, index))
     .filter((task) => task !== null);
+
+  const folders = Array.isArray(parsed.folders)
+    ? parsed.folders
+        .map((raw, index) => sanitizeFolder(raw, index))
+        .filter((folder) => folder !== null)
+    : [];
+
+  return { tasks, folders };
 }
 
 // Validate one persisted task. Returns a valid task, or null when it must be
@@ -59,6 +67,7 @@ function sanitizeTask(raw, index) {
     tags: normalizeTags(raw.tags),
     completed: Boolean(raw.completed),
     favorite: Boolean(raw.favorite),
+    folderId: typeof raw.folderId === "string" ? raw.folderId : null,
     order: Number.isFinite(raw.order) ? raw.order : index,
     createdAt:
       typeof raw.createdAt === "string"
@@ -67,12 +76,37 @@ function sanitizeTask(raw, index) {
   };
 }
 
-// Persist the task list under the current schema version.
-function writeState(tasks) {
+// Validate one persisted folder. Returns a valid folder, or null when it must
+// be dropped (missing id or a real name — same drop-vs-coerce logic as tasks).
+function sanitizeFolder(raw, index) {
+  if (typeof raw !== "object" || raw === null) return null;
+  if (typeof raw.id !== "string" || raw.id === "") return null;
+  if (typeof raw.name !== "string" || raw.name.trim() === "") return null;
+
+  return {
+    id: raw.id,
+    name: raw.name,
+    order: Number.isFinite(raw.order) ? raw.order : index,
+    createdAt:
+      typeof raw.createdAt === "string"
+        ? raw.createdAt
+        : new Date().toISOString(),
+  };
+}
+
+// Persist tasks and folders under the current schema version.
+function writeState({ tasks, folders }) {
   localStorage.setItem(
     STORAGE_KEY,
-    JSON.stringify({ version: SCHEMA_VERSION, tasks })
+    JSON.stringify({ version: SCHEMA_VERSION, tasks, folders })
   );
+}
+
+// Reject names that are missing, non-string, or only whitespace.
+function assertValidName(name) {
+  if (typeof name !== "string" || name.trim() === "") {
+    throw new Error("Folder name must be a non-empty string");
+  }
 }
 
 // Reject titles that are missing, non-string, or only whitespace.
@@ -102,7 +136,7 @@ function normalizeTags(tags) {
 // Return all tasks, sorted ascending by `order` (order is the source of truth
 // for sequence; a new task gets the smallest order and shows up on top).
 export async function getTasks() {
-  const tasks = readState();
+  const { tasks } = readState();
   return [...tasks].sort((a, b) => a.order - b.order);
 }
 
@@ -110,7 +144,7 @@ export async function getTasks() {
 export async function createTask(input) {
   assertValidTitle(input.title);
 
-  const tasks = readState();
+  const { tasks, folders } = readState();
   const topOrder =
     tasks.length === 0 ? 0 : Math.min(...tasks.map((t) => t.order)) - 1;
 
@@ -122,17 +156,18 @@ export async function createTask(input) {
     tags: normalizeTags(input.tags),
     completed: false,
     favorite: false,
+    folderId: typeof input.folderId === "string" ? input.folderId : null,
     order: topOrder,
     createdAt: new Date().toISOString(),
   };
 
-  writeState([task, ...tasks]);
+  writeState({ tasks: [task, ...tasks], folders });
   return task;
 }
 
 // Patch an existing task. id and createdAt are protected (patch values ignored).
 export async function updateTask(id, patch) {
-  const tasks = readState();
+  const { tasks, folders } = readState();
   const index = tasks.findIndex((t) => t.id === id);
   if (index === -1) {
     throw new Error(`Task not found: ${id}`);
@@ -155,7 +190,7 @@ export async function updateTask(id, patch) {
 
   const next = [...tasks];
   next[index] = updated;
-  writeState(next);
+  writeState({ tasks: next, folders });
   return updated;
 }
 
@@ -163,7 +198,7 @@ export async function updateTask(id, patch) {
 // orderedIds (0..N-1). One write. Ids not present keep their relative order at
 // the end — a safety net against data loss if a partial list is ever passed.
 export async function reorderTasks(orderedIds) {
-  const tasks = readState();
+  const { tasks, folders } = readState();
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const ordered = [];
   for (const id of orderedIds) {
@@ -175,7 +210,7 @@ export async function reorderTasks(orderedIds) {
   }
   for (const leftover of byId.values()) ordered.push(leftover); // shouldn't happen
   const next = ordered.map((task, index) => ({ ...task, order: index }));
-  writeState(next);
+  writeState({ tasks: next, folders });
 }
 
 // Re-insert a previously deleted task exactly as it was (same id/order/
@@ -183,16 +218,71 @@ export async function reorderTasks(orderedIds) {
 // `order`, so the task lands back in its old slot. Idempotent: if the id already
 // exists (double undo), do nothing.
 export async function restoreTask(task) {
-  const tasks = readState();
+  const { tasks, folders } = readState();
   if (tasks.some((t) => t.id === task.id)) return;
-  writeState([...tasks, task]);
+  writeState({ tasks: [...tasks, task], folders });
 }
 
 // Remove a task by id. Idempotent: a missing id is a no-op, not an error.
 export async function deleteTask(id) {
-  const tasks = readState();
+  const { tasks, folders } = readState();
   const next = tasks.filter((t) => t.id !== id);
   if (next.length !== tasks.length) {
-    writeState(next);
+    writeState({ tasks: next, folders });
   }
+}
+
+// Return all folders, sorted ascending by `order`.
+export async function getFolders() {
+  const { folders } = readState();
+  return [...folders].sort((a, b) => a.order - b.order);
+}
+
+// Create a folder from user input, filling id/createdAt/order ourselves.
+export async function createFolder(input) {
+  assertValidName(input.name);
+
+  const { tasks, folders } = readState();
+  const topOrder =
+    folders.length === 0 ? 0 : Math.max(...folders.map((f) => f.order)) + 1;
+
+  const folder = {
+    id: crypto.randomUUID(),
+    name: input.name.trim(),
+    order: topOrder,
+    createdAt: new Date().toISOString(),
+  };
+
+  writeState({ tasks, folders: [...folders, folder] });
+  return folder;
+}
+
+// Rename an existing folder. id and createdAt are protected.
+export async function renameFolder(id, name) {
+  assertValidName(name);
+
+  const { tasks, folders } = readState();
+  const index = folders.findIndex((f) => f.id === id);
+  if (index === -1) {
+    throw new Error(`Folder not found: ${id}`);
+  }
+
+  const next = [...folders];
+  next[index] = { ...next[index], name: name.trim() };
+  writeState({ tasks, folders: next });
+  return next[index];
+}
+
+// Remove a folder by id, and unassign it from any task that pointed to it
+// (tasks are never deleted as a side effect of deleting their folder).
+// Idempotent: a missing id is a no-op, not an error.
+export async function deleteFolder(id) {
+  const { tasks, folders } = readState();
+  const nextFolders = folders.filter((f) => f.id !== id);
+  if (nextFolders.length === folders.length) return;
+
+  const nextTasks = tasks.map((t) =>
+    t.folderId === id ? { ...t, folderId: null } : t
+  );
+  writeState({ tasks: nextTasks, folders: nextFolders });
 }

@@ -57,7 +57,8 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16 (fitur Favorite/pin task).
+2026-07-16 (fitur Folder — keputusan out-of-scope sebelumnya dibalik atas
+permintaan eksplisit).
 
 ## Sudah jadi
 
@@ -117,6 +118,21 @@ Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
   opsi Sort By ke-4, tapi pin yang berlaku di semua mode. Belum ada filter
   "Favorites only" dan belum ada bulk action favorite di `SelectionBar` —
   sengaja ditunda (lihat Backlog).
+- Folder: keputusan "Tidak ada fitur Folder" sebelumnya **dibalik atas
+  permintaan eksplisit** — bukan tebakan. Desain: satu folder per task (field
+  `folderId`, bukan many-to-many seperti tag), folder adalah entity terkelola
+  (`folders` di storage, CRUD lewat dialog "Manage Folders" — tombol baru di
+  header), dan tampil sebagai filter exclusive (radio All/No folder/per
+  folder) di `FilterControls`, bukan grouping/section di list. Schema
+  localStorage naik ke versi 2 (`{ version, tasks, folders }`); task lama
+  tanpa `folderId` dapat default `null` lewat `sanitizeTask` (tidak perlu
+  migrasi terpisah). Hapus folder = unassign semua task di dalamnya
+  (`folderId: null`), task-nya sendiri tidak ikut terhapus — satu write di
+  `deleteFolder` (`src/lib/storage.js`). Rename folder di dialog Manage
+  Folders memakai pola sama seperti edit judul task (klik untuk edit inline);
+  hapus folder pakai pola konfirmasi dua-langkah yang sama seperti hapus task.
+  Belum ada breakdown per-folder di Statistik dan belum ada drag-drop urutan
+  folder — sengaja ditunda (lihat Backlog).
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
@@ -128,6 +144,9 @@ Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
   AND dengan filter lain) — ditunda sampai diminta.
 - Bulk action "Favorite/Unfavorite selected" di `SelectionBar` (mirror pola
   bulk complete/uncomplete) — ditunda sampai diminta.
+- Breakdown per-folder di halaman Statistik (`getTaskStats`/`StatsDialog`) —
+  ditunda sampai diminta.
+- Drag-and-drop urutan folder di dialog Manage Folders — ditunda sampai diminta.
 
 ---
 
@@ -145,6 +164,15 @@ Task {
   deadline    string | null   (ISO 8601, atau null kalau tidak ada)
   tags        string[]        (boleh kosong)
   completed   boolean
+  favorite    boolean
+  folderId    string | null   (uuid folder, atau null = tanpa folder)
+  order       number
+  createdAt   string   (ISO 8601)
+}
+
+Folder {
+  id          string   (uuid)
+  name        string   (wajib, tidak boleh kosong/whitespace)
   order       number
   createdAt   string   (ISO 8601)
 }
@@ -153,7 +181,7 @@ Task {
 Data disimpan di localStorage dengan **versi skema**:
 
 ```
-{ "version": 1, "tasks": [...] }
+{ "version": 2, "tasks": [...], "folders": [...] }
 ```
 
 Kalau skema berubah nanti, `storage.js` yang menangani migrasi. Jangan sampai
@@ -222,8 +250,21 @@ Satu sumber kebenaran. Jangan sebar logika filter ke komponen.
 ## Tag
 
 - Many-to-many. Satu task boleh punya banyak tag.
-- **Tidak ada fitur Folder.** Sudah dibuang dari scope. Jangan tambahkan.
 - Tag disimpan sebagai array string di dalam task.
+
+## Folder
+
+- **Satu folder per task** (bukan many-to-many seperti tag). Field `folderId`
+  di task: string (uuid folder) atau `null` (tanpa folder).
+- Folder adalah **entity terkelola**: daftar folder tersendiri (`folders` di
+  storage), bisa dibuat/di-rename/dihapus lewat dialog "Manage Folders".
+- **Hapus folder = unassign, bukan hapus task.** Task yang tadinya di folder
+  itu jadi `folderId: null`, task-nya sendiri tetap ada.
+- Folder tampil sebagai **filter exclusive** (radio: All / No folder / per
+  folder) di `FilterControls`, sama seperti Status/Date — bukan sebagai
+  grouping/section di list task.
+- Belum ada drag-and-drop untuk urutan folder, dan belum ada breakdown folder
+  di halaman Statistik — di luar scope sesi ini kecuali diminta.
 
 ## Dark mode
 
@@ -240,8 +281,8 @@ Harus nyaman di HP, tablet, laptop. Desain mobile-first.
 # Di luar scope
 
 Jangan bangun ini kecuali saya minta eksplisit:
-pengingat/notifikasi, kalender, favorit, login,
-sinkronisasi database, folder, subtask, recurring task.
+pengingat/notifikasi, kalender, login,
+sinkronisasi database, subtask, recurring task.
 
 ---
 
@@ -288,3 +329,137 @@ Setiap kali menyelesaikan implementasi fitur, bug fix, refactor, atau perubahan 
 - Wajib membuat Pull Request ke branch target menggunakan GitHub CLI (`gh pr create`) atau integrasi GitHub yang tersedia.
 - Jangan menganggap pekerjaan selesai sampai Pull Request berhasil dibuat atau terdapat kegagalan yang tidak dapat diatasi (misalnya autentikasi atau permission).
 - Jika gagal membuat PR, laporkan penyebabnya dan tampilkan perintah yang harus dijalankan pengguna.
+
+# Review & Discussion Response Style
+
+Ketika pengguna meminta review, evaluasi, pendapat, brainstorming, atau diskusi (dan TIDAK meminta implementasi), gunakan alur berikut secara konsisten.
+
+## 1. Identifikasi jenis permintaan
+
+Awali dengan menjelaskan jenis permintaan.
+
+Contoh:
+
+- This is a review/discussion request, not an implementation task.
+- This is a design review request.
+- This is an architectural discussion.
+- This is a planning discussion.
+
+Jangan langsung melakukan implementasi, menulis kode, ataupun membuat rencana implementasi kecuali diminta.
+
+---
+
+## 2. Jangan melakukan eksplorasi kode
+
+Untuk request review atau diskusi:
+
+- jangan membaca banyak file hanya untuk mencari jawaban,
+- jangan mengubah kode,
+- jangan membuat commit,
+- jangan membuat Pull Request,
+- gunakan informasi yang sudah diketahui dari konteks proyek.
+
+Hanya eksplorasi kode bila pengguna secara eksplisit meminta investigasi.
+
+---
+
+## 3. Jika pengguna meminta penilaian beberapa opsi
+
+Selalu gunakan tabel.
+
+Gunakan format berikut.
+
+| Item | Direkomendasikan? | Alasan |
+|------|-------------------|--------|
+| ... | Ya / Tidak / Nanti | alasan singkat |
+
+Alasan cukup 1–3 kalimat.
+
+Hindari paragraf panjang untuk setiap item.
+
+---
+
+## 4. Berikan rekomendasi yang tegas
+
+Setelah tabel, selalu buat bagian rekomendasi.
+
+Format:
+
+- kandidat terbaik dikerjakan sekarang
+- kandidat yang sebaiknya ditunda
+- kandidat yang sebaiknya dihindari
+- alasan prioritas
+
+Jangan hanya menjelaskan pro dan kontra tanpa mengambil kesimpulan.
+
+---
+
+## 5. Pertimbangkan dampak teknis
+
+Saat memberi penilaian, pertimbangkan:
+
+- kompleksitas implementasi
+- perubahan arsitektur
+- risiko bug
+- dampak terhadap UX
+- maintenance jangka panjang
+- konsistensi dengan scope proyek
+- effort vs value
+
+Jelaskan secara ringkas.
+
+---
+
+## 6. Gunakan bahasa yang ringkas
+
+Target:
+
+- langsung ke inti
+- bullet point bila perlu
+- tabel untuk perbandingan
+- hindari penjelasan berulang
+- hindari paragraf yang terlalu panjang
+
+Jawaban review harus mudah dipindai (scannable).
+
+---
+
+## 7. Jangan berubah menjadi implementasi
+
+Review tetap review.
+
+Jangan:
+
+- menulis kode
+- membuat pseudocode
+- membuat TODO implementasi
+- mengubah file
+- membuat patch
+
+Kecuali pengguna secara eksplisit meminta langkah implementasi.
+
+---
+
+## 8. Tutup dengan rekomendasi akhir
+
+Akhiri dengan satu paragraf yang berisi keputusan akhir.
+
+Contoh gaya:
+
+- Jika hanya memilih satu fitur berikutnya, saya merekomendasikan ...
+- Saya tidak menyarankan mengerjakan ... sekarang karena ...
+- Setelah fitur ... selesai, baru pertimbangkan ...
+- Urutan prioritas yang saya rekomendasikan adalah ...
+
+Jawaban harus berakhir dengan rekomendasi yang jelas, bukan hanya analisis.
+
+## Review Philosophy
+
+Saat melakukan review:
+
+- Bertindak sebagai senior software engineer yang sedang melakukan design review.
+- Jangan hanya menjawab pertanyaan pengguna; lakukan evaluasi kritis.
+- Berani mengatakan suatu ide tidak layak apabila memang memiliki biaya implementasi yang lebih besar daripada manfaatnya.
+- Prioritaskan kesederhanaan, maintainability, dan konsistensi arsitektur dibanding menambah fitur.
+- Jika terdapat satu opsi yang jelas lebih baik, rekomendasikan opsi tersebut secara eksplisit.
+- Hindari jawaban yang terlalu diplomatis seperti "semuanya tergantung kebutuhan" apabila terdapat rekomendasi teknis yang lebih masuk akal.
