@@ -16,6 +16,7 @@ import {
 import ThemeToggle from "./ThemeToggle";
 import TaskRow from "./TaskRow";
 import FilterControls from "./FilterControls";
+import SelectionBar from "./SelectionBar";
 import { useTheme } from "./useTheme";
 import {
   getTasks,
@@ -83,13 +84,21 @@ export default function App() {
   const newTaskDialog = useRef(null);
   const filterDialog = useRef(null);
 
-  // The most recently deleted task, kept so it can be restored. Persists until
-  // the next task action (add/edit/toggle/delete/reorder) or an Undo. null means
-  // nothing to undo. Single-level: a new delete replaces the previous one.
+  // The most recently deleted task(s), kept so they can be restored. An array so
+  // one undo covers both single and bulk delete (single delete stores a
+  // one-element array). Persists until the next task action
+  // (add/edit/toggle/delete/reorder) or an Undo. null means nothing to undo; a
+  // new delete replaces the previous batch.
   const [lastDeleted, setLastDeleted] = useState(null);
 
   // Id of the row currently being dragged, so DragOverlay can render its clone.
   const [activeId, setActiveId] = useState(null);
+
+  // Multi-select. Both are ephemeral UI state (never persisted), operating over
+  // `visible`. selectionMode gates the selection checkboxes + action bar; while
+  // it's on, drag and edit-on-click are disabled so they don't compete.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
 
   // Pointer covers mouse + touch; Keyboard makes reorder operable without a
   // mouse (Space to lift, arrows to move). distance:8 stops a plain click/tap on
@@ -134,7 +143,7 @@ export default function App() {
   // Reorder is only allowed on the full, manually-ordered list: Sort By = Manual
   // AND no active filter/search. Derived, not state. Because sortBy is seeded
   // from getStoredSort(), this is correct from the first render after reload.
-  const reorderable = sortBy === "manual" && !filterActive;
+  const reorderable = sortBy === "manual" && !filterActive && !selectionMode;
 
   function addNewTag() {
     // Trim before the empty check: a whitespace-only tag would otherwise show
@@ -238,20 +247,91 @@ export default function App() {
       await deleteTask(id);
       setError(null);
       await refresh();
-      setLastDeleted(removed ?? null);
+      setLastDeleted(removed ? [removed] : null);
     } catch (err) {
       setError(String(err?.message ?? err));
     }
   }
 
-  // Restore the most recently deleted task to its original position.
+  // Restore the most recently deleted task(s) to their original positions.
+  // Sequential await (not Promise.all): each restoreTask does its own
+  // read-modify-write on localStorage, so parallel calls would clobber. One
+  // refresh at the end.
   async function handleUndo() {
     if (!lastDeleted) return;
     try {
-      await restoreTask(lastDeleted);
+      for (const task of lastDeleted) {
+        await restoreTask(task);
+      }
       setLastDeleted(null);
       setError(null);
       await refresh();
+    } catch (err) {
+      setError(String(err?.message ?? err));
+    }
+  }
+
+  // --- Multi-select -------------------------------------------------------
+
+  // Flip selection mode; leaving it always clears the current selection so we
+  // never carry stale ids into the next session of selecting.
+  function toggleSelectionMode() {
+    setSelectionMode((on) => {
+      if (on) setSelectedIds(new Set());
+      return !on;
+    });
+  }
+
+  function toggleSelect(id) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectAllVisible() {
+    setSelectedIds(new Set(visible.map((t) => t.id)));
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+  }
+
+  // Bulk complete/uncomplete the selected tasks. Sequential await (see
+  // handleUndo). Selection is cleared afterwards so the count can't reference
+  // tasks that a filter now hides.
+  async function handleBulkComplete(completed) {
+    setLastDeleted(null); // closes the undo window
+    try {
+      for (const id of selectedIds) {
+        await updateTask(id, { completed });
+      }
+      setError(null);
+      await refresh();
+      clearSelection();
+    } catch (err) {
+      setError(String(err?.message ?? err));
+    }
+  }
+
+  // Bulk delete the selected tasks (with Undo). Capture the full task objects
+  // BEFORE deleting so restore has their id/order/createdAt. Sequential await,
+  // one refresh. Selection mode stays on; the selection just empties.
+  async function handleBulkDelete() {
+    const ids = [...selectedIds];
+    const removed = ids
+      .map((id) => tasks?.find((t) => t.id === id))
+      .filter(Boolean);
+    try {
+      for (const id of ids) {
+        await deleteTask(id);
+      }
+      setError(null);
+      await refresh();
+      setLastDeleted(removed.length > 0 ? removed : null);
+      clearSelection();
     } catch (err) {
       setError(String(err?.message ?? err));
     }
@@ -289,6 +369,17 @@ export default function App() {
               </span>
             )}
           </Button>
+          {/* Always reachable while selecting so Cancel can't disappear if a
+              bulk delete empties the visible list. */}
+          {(selectionMode || visible.length > 0) && (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={toggleSelectionMode}
+            >
+              {selectionMode ? "Cancel" : "Select"}
+            </Button>
+          )}
           <label className="flex items-center gap-1.5 text-sm text-text">
             Sort by
             <select
@@ -303,7 +394,11 @@ export default function App() {
           </label>
         </div>
 
-        {error && <p className="text-sm text-status-overdue">{error}</p>}
+        {error && (
+          <p className="text-sm text-status-overdue animate-[fade-in_150ms_ease-out]">
+            {error}
+          </p>
+        )}
 
         {/* New task popup. Native <dialog>: showModal() gives focus trap,
             Escape-to-close, and a backdrop for free. The onClick closes it when
@@ -432,15 +527,23 @@ export default function App() {
           </Button>
         </dialog>
 
-        {/* Progress bar: always rendered, always from ALL tasks. Native
-            <progress>, styled with utilities only (track + size); the fill
-            follows accent-color. */}
+        {/* Progress bar: always rendered, always from ALL tasks. Custom div
+            (not native <progress>) so the fill can transition smoothly across
+            browsers when the value changes — native <progress> can't be
+            animated reliably (Firefox doesn't animate it at all). */}
         <div className="flex items-center gap-3">
-          <progress
-            value={progress}
-            max={1}
-            className="h-2 w-full appearance-none rounded-lg bg-progress-track [accent-color:var(--color-accent)]"
-          />
+          <div
+            role="progressbar"
+            aria-valuenow={Math.round(progress * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            className="h-2 w-full overflow-hidden rounded-lg bg-progress-track"
+          >
+            <div
+              className="h-full rounded-lg bg-accent transition-[width] duration-300 ease-out"
+              style={{ width: `${progress * 100}%` }}
+            />
+          </div>
           <span className="text-sm tabular-nums text-text-muted">
             {Math.floor(progress * 100)}%
           </span>
@@ -458,12 +561,27 @@ export default function App() {
           </p>
         ) : null}
 
-        {/* Undo bar for the last delete. Persists until the next task action or
-            an Undo (see setLastDeleted calls in the handlers). */}
-        {lastDeleted && (
-          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-muted">
+        {/* Bulk-action bar, only in selection mode. Operates over `visible`. */}
+        {selectionMode && (
+          <SelectionBar
+            selectedCount={selectedIds.size}
+            visibleCount={visible.length}
+            onSelectAll={selectAllVisible}
+            onClear={clearSelection}
+            onComplete={() => handleBulkComplete(true)}
+            onUncomplete={() => handleBulkComplete(false)}
+            onDelete={handleBulkDelete}
+          />
+        )}
+
+        {/* Undo bar for the last delete (single or bulk). Persists until the
+            next task action or an Undo (see setLastDeleted calls). */}
+        {lastDeleted && lastDeleted.length > 0 && (
+          <div className="flex items-center justify-between gap-3 rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-muted animate-[fade-slide-in_150ms_ease-out]">
             <span className="min-w-0 truncate">
-              Deleted "{lastDeleted.title}"
+              {lastDeleted.length === 1
+                ? `Deleted "${lastDeleted[0].title}"`
+                : `Deleted ${lastDeleted.length} tasks`}
             </span>
             <Button type="button" variant="secondary" onClick={handleUndo}>
               Undo
@@ -494,6 +612,9 @@ export default function App() {
                     task={task}
                     now={now}
                     reorderable={reorderable}
+                    selectionMode={selectionMode}
+                    selected={selectedIds.has(task.id)}
+                    onToggleSelect={toggleSelect}
                     onUpdate={handleUpdate}
                     onDelete={handleDelete}
                   />

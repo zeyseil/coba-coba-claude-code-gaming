@@ -31,6 +31,7 @@
   --color-disabled-bg: #f3f4f6;
   --color-disabled-fg: #9ca3af;
   --color-overlay: rgba(0, 0, 0, 0.4);
+  --color-row-hover: #f1f2f4;
 }
 
 .dark {
@@ -53,6 +54,7 @@
   --color-disabled-bg: #27272a;
   --color-disabled-fg: #6b7280;
   --color-overlay: rgba(0, 0, 0, 0.6);
+  --color-row-hover: #2a2a2f;
 }
 
 /* Expose the tokens to Tailwind so they become utilities (bg-bg, text-text, ...). */
@@ -76,4 +78,44 @@
   --color-disabled-bg: var(--color-disabled-bg);
   --color-disabled-fg: var(--color-disabled-fg);
   --color-overlay: var(--color-overlay);
+  --color-row-hover: var(--color-row-hover);
+}
+
+/*
+  Motion primitives. Kept small and declarative; applied via Tailwind utilities
+  (animate-[fade-in], animate-[fade-slide-in]) or the dialog rules below. The
+  prefers-reduced-motion block at the end disables all of it.
+*/
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fade-slide-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Native <dialog> open animation: the panel slides+fades, its backdrop fades. */
+dialog[open] {
+  animation: fade-slide-in 150ms ease-out;
+}
+dialog[open]::backdrop {
+  animation: fade-in 150ms ease-out;
+}
+
+/*
+  Respect the user's reduced-motion preference: drop every animation and
+  transition to near-instant. The UI stays fully functional, just without
+  movement.
+*/
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after,
+  *::backdrop {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -57,7 +57,7 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16.
+2026-07-16 (multi-select + bulk actions).
 
 ## Sudah jadi
 
@@ -86,10 +86,27 @@ Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
   By tetap terlihat di halaman. Token `--color-overlay` untuk backdrop.
 - Undo hapus terakhir (`restoreTask`), memulihkan task ke posisi semula; baris
   Undo persisten sampai aksi task berikutnya.
+- Drag ghost kustom = clone `RowOverlay` di `<DragOverlay>` (bukan native
+  `setDragImage`); auto-scroll saat drag = default `@dnd-kit` (tidak diubah).
+- Motion & transisi: token `--color-row-hover`, hover baris & tombol, transisi
+  warna judul saat toggle complete, animasi buka `<dialog>`, fade/slide untuk
+  undo bar & error. Semua dimatikan lewat guard `prefers-reduced-motion` di
+  `src/index.css` (a11y). Tidak ada animasi enter/exit per-baris (sengaja).
+- Multi-select + bulk actions: tombol "Select" masuk *selection mode* (checkbox
+  seleksi + `SelectionBar`; drag & edit-on-click judul nonaktif). State
+  `selectedIds` (Set) + `selectionMode` efemeral di `App`, beroperasi atas
+  `visible`. Bulk delete (+undo array `lastDeleted`, loop `restoreTask`), bulk
+  complete/uncomplete (loop `updateTask`). Semua loop bulk sekuensial `await`
+  (bukan `Promise.all`) karena tiap fungsi storage read-modify-write sendiri;
+  seleksi dikosongkan setelah tiap aksi. Konfirmasi hapus dua-langkah di
+  `SelectionBar`.
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
-- (kosong untuk saat ini)
+- Animasi enter/exit per-baris task (butuh presence-tracking; ditunda).
+- Wrapper batch opsional di `storage.js` (`deleteTasks`/`restoreTasks`/
+  `updateTasks`, satu tulisan per aksi) kalau list membesar — sekarang loop
+  sekuensial sudah cukup.
 
 ---
 

@@ -2,7 +2,7 @@
 // logic. Extracted because there are now more than three real callers (App and
 // TaskRow, add/save/cancel/delete/add-tag/remove-tag).
 const BASE =
-  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm min-h-11 sm:min-h-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:bg-disabled-bg disabled:text-disabled-fg";
+  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm min-h-11 sm:min-h-0 transition-[color,background-color,border-color,opacity] duration-150 active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:bg-disabled-bg disabled:text-disabled-fg";
 
 const VARIANTS = {
   primary: "bg-accent text-accent-fg hover:opacity-90",

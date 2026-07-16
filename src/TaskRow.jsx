@@ -19,7 +19,16 @@ const FIELD =
 // One task row. Owns only its local edit state; the task list and all storage
 // mutations live in App. onUpdate returns true on success so the row knows
 // whether to leave edit mode. `now` is injected from App for status.
-export default function TaskRow({ task, now, reorderable, onUpdate, onDelete }) {
+export default function TaskRow({
+  task,
+  now,
+  reorderable,
+  selectionMode,
+  selected,
+  onToggleSelect,
+  onUpdate,
+  onDelete,
+}) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftPriority, setDraftPriority] = useState("medium");
@@ -96,10 +105,31 @@ export default function TaskRow({ task, now, reorderable, onUpdate, onDelete }) 
     <li
       ref={setNodeRef}
       style={sortableStyle}
-      className={`flex flex-wrap items-center gap-3 px-4 py-3 ${
-        isDragging ? "opacity-40" : ""
+      className={`flex flex-wrap items-center gap-3 px-4 py-3 transition-colors ${
+        isDragging ? "opacity-40" : "hover:bg-row-hover"
       }`}
     >
+      {/* Selection checkbox: only in selection mode, leftmost. Ephemeral UI
+          state (drives App's selectedIds), separate from the completed checkbox
+          below — the two do not conflict. Rounded (vs. the square completed
+          checkbox) so the two are distinguishable at a glance when both show.
+          Native checkboxes ignore border-radius while appearance:auto (the
+          browser draws its own square widget), so this one opts out with
+          appearance-none and is drawn manually. The fill is driven by the
+          `selected` prop directly (same pattern as the completed-title
+          line-through below) rather than the :checked pseudo-class, which
+          proved unreliable to repaint right after a React-driven toggle. */}
+      {selectionMode && (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={() => onToggleSelect(task.id)}
+          aria-label={`Select task: ${task.title}`}
+          className={`size-5 sm:size-4 shrink-0 appearance-none rounded-full border-2 transition-colors ${
+            selected ? "border-accent bg-accent" : "border-border"
+          }`}
+        />
+      )}
       <input
         type="checkbox"
         checked={task.completed}
@@ -204,26 +234,37 @@ export default function TaskRow({ task, now, reorderable, onUpdate, onDelete }) 
               ⠿
             </button>
           )}
-          {/* Stays a <span> (not <button>) to keep the flex/line-clamp layout
-              and line-through style; we add button semantics + keyboard support
-              so it's operable and announced as a control. */}
-          <span
-            role="button"
-            tabIndex={0}
-            aria-label={`Edit task: ${task.title}`}
-            onClick={startEdit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault(); // Space would otherwise scroll the page
-                startEdit();
-              }
-            }}
-            className={`min-w-0 basis-full sm:basis-auto sm:flex-1 cursor-pointer break-words line-clamp-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
-              task.completed ? "line-through text-text-muted" : ""
-            }`}
-          >
-            {task.title}
-          </span>
+          {/* In selection mode the title is plain, non-interactive text —
+              edit-on-click is disabled so it doesn't compete with selecting.
+              Otherwise it's a <span> (kept for flex/line-clamp/line-through)
+              with button semantics + keyboard support so it's operable. */}
+          {selectionMode ? (
+            <span
+              className={`min-w-0 basis-full sm:basis-auto sm:flex-1 break-words line-clamp-2 text-sm text-text transition-colors ${
+                task.completed ? "line-through text-text-muted" : ""
+              }`}
+            >
+              {task.title}
+            </span>
+          ) : (
+            <span
+              role="button"
+              tabIndex={0}
+              aria-label={`Edit task: ${task.title}`}
+              onClick={startEdit}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault(); // Space would otherwise scroll the page
+                  startEdit();
+                }
+              }}
+              className={`min-w-0 basis-full sm:basis-auto sm:flex-1 cursor-pointer break-words line-clamp-2 text-sm text-text transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+                task.completed ? "line-through text-text-muted" : ""
+              }`}
+            >
+              {task.title}
+            </span>
+          )}
           <span
             className={`inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-medium capitalize ${PRIORITY_BADGE[task.priority]}`}
           >
