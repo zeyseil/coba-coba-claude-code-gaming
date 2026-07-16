@@ -57,7 +57,7 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16 (multi-select + bulk actions).
+2026-07-16 (halaman statistik dialog).
 
 ## Sudah jadi
 
@@ -100,6 +100,12 @@ Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
   (bukan `Promise.all`) karena tiap fungsi storage read-modify-write sendiri;
   seleksi dikosongkan setelah tiap aksi. Konfirmasi hapus dua-langkah di
   `SelectionBar`.
+- Halaman statistik: dialog popup yang menampilkan total/active/completed,
+  breakdown per prioritas (high/medium/low), breakdown per tag dengan count.
+  Dihitung dari **seluruh task** (bukan filtered) via `getTaskStats`
+  (`src/lib/getTaskStats.js`). Komponen presentasional `StatsDialog.jsx`
+  mengikuti pola `FilterControls`. Tombol "Statistics" di header, dialog native
+  `<dialog>` dengan pola sama seperti Filters (backdrop-click, Escape, Done).
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
@@ -219,7 +225,7 @@ Harus nyaman di HP, tablet, laptop. Desain mobile-first.
 # Di luar scope
 
 Jangan bangun ini kecuali saya minta eksplisit:
-pengingat/notifikasi, kalender, favorit, halaman statistik, login,
+pengingat/notifikasi, kalender, favorit, login,
 sinkronisasi database, folder, subtask, recurring task.
 
 ---
@@ -233,3 +239,8 @@ sinkronisasi database, folder, subtask, recurring task.
    langkah konkret, bukan "silakan dicoba".
 4. Kalau saya tanya kenapa kamu menulis sesuatu, jelaskan sejujurnya. Termasuk
    kalau itu pilihan yang lemah.
+5. **PENTING: Setiap sesi selesai, perbarui bagian "Status implementasi" di file
+   ini (CLAUDE.md).** Tambahkan fitur baru ke "Sudah jadi", hapus dari
+   "Backlog" atau "Di luar scope" jika relevan, dan update tanggal di baris
+   "Diperbarui". Ini menjaga CLAUDE.md tetap akurat sebagai single source of
+   truth untuk apa yang sudah dikerjakan.
