@@ -156,14 +156,16 @@ export default function TaskRow({
           drawn manually. The fill is driven by the `selected` prop directly
           (same pattern as the completed-title line-through below) rather than
           the :checked pseudo-class, which proved unreliable to repaint right
-          after a React-driven toggle. */}
+          after a React-driven toggle. appearance-none also drops the native
+          focus ring, so the focus-visible ring below is required, not
+          decorative — without it the checkbox is invisible to keyboard users. */}
       {selectionMode && (
         <input
           type="checkbox"
           checked={selected}
           onChange={() => onToggleSelect(task.id)}
           aria-label={`Select task: ${task.title}`}
-          className={`size-5 sm:size-4 shrink-0 appearance-none rounded-full border-2 transition-colors ${
+          className={`size-5 sm:size-4 shrink-0 appearance-none rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
             selected ? "border-accent bg-accent" : "border-border"
           }`}
         />
@@ -177,7 +179,7 @@ export default function TaskRow({
             : `Favorite task: ${task.title}`
         }
         aria-pressed={task.favorite}
-        className={`shrink-0 text-lg leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+        className={`inline-flex shrink-0 items-center justify-center min-h-11 min-w-11 sm:min-h-0 sm:min-w-0 text-lg leading-none transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
           task.favorite ? "text-accent" : "text-text-muted"
         }`}
       >
@@ -197,7 +199,7 @@ export default function TaskRow({
             ? `Collapse subtasks: ${task.title}`
             : `Expand subtasks: ${task.title}`
         }
-        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-progress-track px-2 py-1 text-xs text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        className="inline-flex shrink-0 items-center gap-1 min-h-11 sm:min-h-0 rounded-lg border border-border bg-progress-track px-2 py-1 text-xs text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       >
         <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
         {task.subtasks.length > 0
@@ -216,7 +218,7 @@ export default function TaskRow({
               type="checkbox"
               checked={task.completed}
               onChange={() => onUpdate(task.id, { completed: !task.completed })}
-              className="size-5 sm:size-4 [accent-color:var(--color-accent)]"
+              className="size-5 sm:size-4 [accent-color:var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
             />
             Completed
           </label>

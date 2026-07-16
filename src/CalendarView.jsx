@@ -93,7 +93,7 @@ export default function CalendarView({ tasks, now, folders, onUpdate, onDelete }
                 return (
                   <span
                     key={task.id}
-                    className={`truncate rounded px-1 text-[11px] leading-tight ${
+                    className={`truncate rounded-lg px-1 text-xs leading-tight ${
                       status === "overdue"
                         ? "text-status-overdue"
                         : "text-text-muted"
@@ -104,7 +104,7 @@ export default function CalendarView({ tasks, now, folders, onUpdate, onDelete }
                 );
               })}
               {hiddenCount > 0 && (
-                <span className="text-[11px] leading-tight text-text-muted">
+                <span className="text-xs leading-tight text-text-muted">
                   +{hiddenCount} more
                 </span>
               )}

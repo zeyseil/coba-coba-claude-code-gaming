@@ -45,7 +45,7 @@ export default function FilterControls({
                 name="status"
                 checked={filters.status === value}
                 onChange={() => onChange({ ...filters, status: value })}
-                className="[accent-color:var(--color-accent)]"
+                className="[accent-color:var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               />
               {value}
             </label>
@@ -67,7 +67,7 @@ export default function FilterControls({
                 type="checkbox"
                 checked={filters.priorities.includes(priority)}
                 onChange={() => togglePriority(priority)}
-                className="[accent-color:var(--color-accent)]"
+                className="[accent-color:var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               />
               {priority}
             </label>
@@ -90,7 +90,7 @@ export default function FilterControls({
                 name="date"
                 checked={filters.date === value}
                 onChange={() => onChange({ ...filters, date: value })}
-                className="[accent-color:var(--color-accent)]"
+                className="[accent-color:var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               />
               {value}
             </label>
@@ -115,7 +115,7 @@ export default function FilterControls({
                   type="checkbox"
                   checked={filters.tags.includes(tag)}
                   onChange={() => toggleTag(tag)}
-                  className="[accent-color:var(--color-accent)]"
+                  className="[accent-color:var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                 />
                 {tag}
               </label>
@@ -143,7 +143,7 @@ export default function FilterControls({
                 name="folder"
                 checked={filters.folder === value}
                 onChange={() => onChange({ ...filters, folder: value })}
-                className="[accent-color:var(--color-accent)]"
+                className="[accent-color:var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               />
               {label}
             </label>
