@@ -16,6 +16,7 @@ import {
 import ThemeToggle from "./ThemeToggle";
 import TaskRow from "./TaskRow";
 import FilterControls from "./FilterControls";
+import StatsDialog from "./StatsDialog";
 import SelectionBar from "./SelectionBar";
 import { useTheme } from "./useTheme";
 import {
@@ -28,6 +29,7 @@ import {
 } from "./lib/storage";
 import { toISODeadline } from "./lib/deadline";
 import { getVisibleTasks } from "./lib/getVisibleTasks";
+import { getTaskStats } from "./lib/getTaskStats";
 import { sortTasks } from "./lib/sortTasks";
 import { getStoredSort, setStoredSort } from "./lib/sortPreference";
 import Button from "./Button";
@@ -83,6 +85,7 @@ export default function App() {
   // the dialog element owns its own open state, focus trap, and Escape-to-close.
   const newTaskDialog = useRef(null);
   const filterDialog = useRef(null);
+  const statsDialog = useRef(null);
 
   // The most recently deleted task(s), kept so they can be restored. An array so
   // one undo covers both single and bulk delete (single delete stores a
@@ -369,6 +372,13 @@ export default function App() {
               </span>
             )}
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => statsDialog.current.showModal()}
+          >
+            Statistics
+          </Button>
           {/* Always reachable while selecting so Cancel can't disappear if a
               bulk delete empties the visible list. */}
           {(selectionMode || visible.length > 0) && (
@@ -521,6 +531,31 @@ export default function App() {
             type="button"
             variant="primary"
             onClick={() => filterDialog.current.close()}
+            className="mt-3 w-full sm:w-auto"
+          >
+            Done
+          </Button>
+        </dialog>
+
+        {/* Statistics popup. Read-only, same native <dialog> pattern. Always
+            computed from ALL tasks (state `tasks`), never `visible` — same
+            rule as the progress bar. */}
+        <dialog
+          ref={statsDialog}
+          aria-labelledby="stats-title"
+          onClick={(e) => {
+            if (e.target === statsDialog.current) statsDialog.current.close();
+          }}
+          className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-surface p-4 text-text [&::backdrop]:bg-overlay"
+        >
+          <h2 id="stats-title" className="mb-3 text-lg font-semibold">
+            Statistics
+          </h2>
+          <StatsDialog stats={getTaskStats(tasks ?? [])} />
+          <Button
+            type="button"
+            variant="primary"
+            onClick={() => statsDialog.current.close()}
             className="mt-3 w-full sm:w-auto"
           >
             Done
