@@ -2,7 +2,7 @@
 // logic. Extracted because there are now more than three real callers (App and
 // TaskRow, add/save/cancel/delete/add-tag/remove-tag).
 const BASE =
-  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm min-h-11 sm:min-h-0 transition-[color,background-color,border-color,opacity] duration-150 enabled:active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:bg-disabled-bg disabled:text-disabled-fg disabled:cursor-not-allowed";
+  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm min-h-11 sm:min-h-0 transition-[color,background-color,border-color,opacity,transform] duration-150 enabled:active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:bg-disabled-bg disabled:text-disabled-fg disabled:cursor-not-allowed";
 
 // Hover and active are gated behind `enabled:` so a disabled button stays
 // visually inert instead of still reacting to the pointer.

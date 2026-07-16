@@ -96,6 +96,18 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/*
+  Modal dialogs are centred by the UA stylesheet's `margin: auto` on
+  dialog:modal. Tailwind's preflight resets `margin: 0` on every element via
+  its `*` rule, and author styles beat the UA stylesheet regardless of
+  specificity — so that reset silently wins and, with the UA's
+  `position: fixed; inset: 0` still in force, pins every dialog to the
+  top-left corner. Restore centring here, once, rather than per dialog.
+*/
+dialog:modal {
+  margin: auto;
+}
+
 /* Native <dialog> open animation: the panel slides+fades, its backdrop fades. */
 dialog[open] {
   animation: fade-slide-in 150ms ease-out;

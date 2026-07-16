@@ -57,7 +57,12 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-16 (sesi ketiga hari ini: audit UI seluruh app terhadap
+2026-07-17 (sesi terbaru: perapian interaksi UI — touch target checkbox
+seleksi (item Backlog terakhir dari audit, sekarang ditutup), hover/press
+tombol subtask, checkbox complete jadi tombol Complete/Uncomplete berkonfirmasi,
+perbaikan bug centering dialog, dan filter jadi draft sampai Done ditekan;
+lihat entri "Perapian interaksi UI" di bawah. Sebelumnya, 2026-07-16 sesi
+ketiga: audit UI seluruh app terhadap
 `.claude/DESIGN_SYSTEM.md` — bukan fitur baru, murni perbaikan a11y &
 konsistensi, lihat entri "Audit Design System" di bawah. Sesi kedua hari ini,
 setelah fitur Recurring Task: breakdown
@@ -71,6 +76,54 @@ kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi eksplisit
 ke user, lihat detail di bawah).
 
 ## Sudah jadi
+
+- Perapian interaksi UI (bukan fitur baru; a11y + feedback + satu bug fix).
+  Tanpa dependency, token, maupun komponen baru. Yang dikerjakan:
+  (1) **Bug: dialog tidak center.** Kelima dialog ternyata nempel di pojok
+  kiri-atas, bukan di tengah. Penyebabnya preflight Tailwind v4 yang me-reset
+  `margin: 0` lewat rule universal `*` — dan karena author stylesheet selalu
+  mengalahkan UA stylesheet tanpa memandang specificity, reset itu membunuh
+  `margin: auto` milik UA untuk `dialog:modal`, sementara `position: fixed;
+  inset: 0` dari UA tetap berlaku. Diperbaiki dengan satu rule
+  `dialog:modal { margin: auto }` di `index.css` — sengaja di CSS, bukan
+  `m-auto` di tiap class string, supaya berlaku otomatis untuk dialog
+  berikutnya dan alasannya terdokumentasi di satu tempat;
+  (2) **touch target** checkbox seleksi `TaskRow`: `size-5 sm:size-4` →
+  `size-6` (24×24 di mobile DAN desktop) + `cursor-pointer`. Ini menutup item
+  Backlog terakhir dari audit Design System. Dibuat 24px di desktop juga
+  karena WCAG 2.5.8 berlaku di semua viewport — desktop yang 16px justru lebih
+  parah dari mobile yang 20px, jadi memperbaiki mobile saja tidak menutup gap;
+  (3) **feedback tombol subtask**: `cursor-pointer` + `hover:border-accent
+  hover:text-text active:opacity-80`. Meniru idiom `Button` tanpa memakai
+  komponennya — tombol ini chip kecil (`px-2 py-1 text-xs`), memaksakannya ke
+  `Button` butuh ~6 override yang melawan BASE. Preseden: favorite star juga
+  tombol manual;
+  (4) **checkbox `Completed` → tombol Complete/Uncomplete**. Tombol menyatakan
+  aksinya, bukan state-nya. Complete memunculkan dialog konfirmasi;
+  Uncomplete langsung tanpa konfirmasi (arah yang berisiko cuma satu).
+  Punya animasi tekan `enabled:active:scale-95` — `transform` ikut ditambahkan
+  ke daftar `transition-[...]` di `Button.jsx` BASE, karena kalau ditaruh lewat
+  `className` justru menimpa seluruh daftar property BASE dan malah membunuh
+  transisi warna. Dialog konfirmasinya **lokal di `TaskRow`** (bukan singleton
+  di `App` seperti lima dialog lain): konfirmasi ini row-scoped, dan pendekatan
+  App akan memaksa threading prop lewat `CalendarView` yang juga merender
+  `TaskRow`. Karena lokal, Complete dari Calendar ikut jalan tanpa satu baris
+  pun perubahan di `CalendarView.jsx`. Dialog dirender sebagai **sibling**
+  `<li>` (pola sama seperti `{expanded && <SubtaskList/>}`), tidak di dalam
+  `<form>` — tombol di dalam dialog tetap ter-asosiasi ke `<form>` leluhurnya,
+  jadi kalau di-nest Confirm akan men-submit form edit;
+  (5) **filter jadi draft**: ini **membalik keputusan lama "filter apply-live"**
+  yang dulu terdokumentasi eksplisit di komentar `App.jsx` — atas permintaan
+  eksplisit user. Sekarang `draftFilters` di `App` yang di-edit dialog, dan
+  baru masuk ke `filters` saat Done ditekan. Escape/backdrop cuma menutup;
+  draft yang belum di-commit terbuang sendirinya karena di-sinkron ulang dari
+  `filters` **saat dialog dibuka** — sengaja saat buka, bukan lewat handler
+  `onClose`, sebab Done memicu `close` dan handler-nya akan membaca `filters`
+  yang masih nilai lama dari closure render itu lalu menimpa draft.
+  `FilterControls.jsx` **tidak diubah sama sekali** — ia sudah fully controlled
+  (nol `useState`), jadi cukup mengganti apa yang di-wire ke sana.
+  `filterActive` tetap dihitung dari `filters` yang sudah di-commit, sehingga
+  indikator titik di tombol Filters dan gate `reorderable` otomatis benar.
 
 - Audit Design System (audit UI seluruh app terhadap
   `.claude/DESIGN_SYSTEM.md`). Hasil audit: **nol hardcoded color** di seluruh
@@ -131,7 +184,9 @@ ke user, lihat detail di bawah).
 - Semantik keyboard/tombol untuk judul yang diklik (a11y): `role="button"`,
   fokusabel, Enter/Space, `aria-label`.
 - Konfirmasi hapus inline dua-langkah (Delete → Confirm/Cancel), state lokal
-  per-baris di `TaskRow`. **Update:** checkbox toggle complete/uncomplete dan
+  per-baris di `TaskRow`. **Update:** toggle complete/uncomplete (waktu itu
+  masih checkbox; kini tombol Complete/Uncomplete — lihat entri "Perapian
+  interaksi UI") dan
   tombol Delete (dengan konfirmasi dua-langkah yang sama) dipindah dari baris
   view mode ke dalam form edit mode — baris normal (tidak sedang diedit)
   tidak lagi punya cara toggle complete atau hapus tanpa klik judul dulu
@@ -302,11 +357,6 @@ ke user, lihat detail di bawah).
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
-- Checkbox seleksi (`TaskRow`, selection mode) berukuran 20×20px di mobile
-  (`size-5`). Di bawah 24×24 yang diminta WCAG 2.2 AA (2.5.8 Target Size),
-  meski ukuran ini sengaja dipilih saat desain. Ditemukan saat audit Design
-  System; tidak diubah karena di luar scope yang disetujui — angkat lagi kalau
-  target size mau ditegakkan.
 - Animasi enter/exit per-baris task (butuh presence-tracking; ditunda).
 - Wrapper batch opsional di `storage.js` (`deleteTasks`/`restoreTasks`/
   `updateTasks`, satu tulisan per aksi) kalau list membesar — sekarang loop

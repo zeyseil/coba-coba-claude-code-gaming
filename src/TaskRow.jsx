@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { getTaskStatus } from "./lib/taskStatus";
@@ -45,6 +45,10 @@ export default function TaskRow({
   // Subtask checklist is collapsed by default; independent of isEditing so it
   // can be operated (add/toggle/delete) whether or not the title is being edited.
   const [expanded, setExpanded] = useState(false);
+  // Completing asks for confirmation; uncompleting does not. Driven imperatively
+  // like App's dialogs (showModal/close, no isOpen state) — the element owns its
+  // own open state, focus trap and Escape handling.
+  const completeDialog = useRef(null);
 
   function startEdit() {
     const { date, time } = fromISODeadline(task.deadline);
@@ -158,14 +162,17 @@ export default function TaskRow({
           the :checked pseudo-class, which proved unreliable to repaint right
           after a React-driven toggle. appearance-none also drops the native
           focus ring, so the focus-visible ring below is required, not
-          decorative — without it the checkbox is invisible to keyboard users. */}
+          decorative — without it the checkbox is invisible to keyboard users.
+          size-6 is a hard floor, not a taste call: WCAG 2.2 AA (2.5.8 Target
+          Size) wants 24x24, and it applies at every viewport — so this one
+          keeps 24px on desktop too rather than shrinking with a sm: variant. */}
       {selectionMode && (
         <input
           type="checkbox"
           checked={selected}
           onChange={() => onToggleSelect(task.id)}
           aria-label={`Select task: ${task.title}`}
-          className={`size-5 sm:size-4 shrink-0 appearance-none rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
+          className={`size-6 shrink-0 cursor-pointer appearance-none rounded-full border-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
             selected ? "border-accent bg-accent" : "border-border"
           }`}
         />
@@ -199,7 +206,7 @@ export default function TaskRow({
             ? `Collapse subtasks: ${task.title}`
             : `Expand subtasks: ${task.title}`
         }
-        className="inline-flex shrink-0 items-center gap-1 min-h-11 sm:min-h-0 rounded-lg border border-border bg-progress-track px-2 py-1 text-xs text-text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        className="inline-flex shrink-0 cursor-pointer items-center gap-1 min-h-11 sm:min-h-0 rounded-lg border border-border bg-progress-track px-2 py-1 text-xs text-text-muted transition-[color,border-color,opacity] duration-150 hover:border-accent hover:text-text active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
       >
         <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
         {task.subtasks.length > 0
@@ -212,16 +219,29 @@ export default function TaskRow({
           className="flex flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center"
         >
           {/* Completed toggle and delete live only in edit mode now — the row
-              view is kept lean; both actions are one click (title) away. */}
-          <label className="flex items-center gap-2 text-sm text-text">
-            <input
-              type="checkbox"
-              checked={task.completed}
-              onChange={() => onUpdate(task.id, { completed: !task.completed })}
-              className="size-5 sm:size-4 [accent-color:var(--color-accent)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-            />
-            Completed
-          </label>
+              view is kept lean; both actions are one click (title) away.
+              The toggle is a button rather than a checkbox so it can state the
+              action it performs. Completing is confirmed via the dialog below;
+              uncompleting is not, since it is the undo of the risky direction. */}
+          {task.completed ? (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => onUpdate(task.id, { completed: false })}
+              className="w-full sm:w-auto enabled:active:scale-95"
+            >
+              Uncomplete
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => completeDialog.current.showModal()}
+              className="w-full sm:w-auto enabled:active:scale-95"
+            >
+              Complete
+            </Button>
+          )}
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -409,6 +429,53 @@ export default function TaskRow({
           subtasks={task.subtasks}
           onChange={(subtasks) => onUpdate(task.id, { subtasks })}
         />
+      )}
+      {/* Confirmation for the Complete button above. Deliberately a sibling of
+          the edit form rather than a child: a dialog's buttons still associate
+          with an ancestor <form>, so nesting would make Confirm submit the
+          edit. Modal dialogs are position:fixed, so living in the row's flex
+          layout costs nothing, and only an editing row renders one. */}
+      {isEditing && (
+        <dialog
+          ref={completeDialog}
+          aria-labelledby={`complete-title-${task.id}`}
+          onClick={(e) => {
+            if (e.target === completeDialog.current) completeDialog.current.close();
+          }}
+          className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-lg border border-border bg-surface p-4 text-text [&::backdrop]:bg-overlay"
+        >
+          <h2
+            id={`complete-title-${task.id}`}
+            className="mb-3 text-lg font-semibold"
+          >
+            Complete task?
+          </h2>
+          <p className="text-sm text-text-muted">
+            Mark “{task.title}” as completed?
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Button
+              type="button"
+              variant="primary"
+              aria-label={`Confirm complete: ${task.title}`}
+              onClick={() => {
+                onUpdate(task.id, { completed: true });
+                completeDialog.current.close();
+              }}
+              className="w-full sm:w-auto"
+            >
+              Confirm
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => completeDialog.current.close()}
+              className="w-full sm:w-auto"
+            >
+              Cancel
+            </Button>
+          </div>
+        </dialog>
       )}
     </li>
   );

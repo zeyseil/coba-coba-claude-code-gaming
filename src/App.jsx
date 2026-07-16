@@ -112,6 +112,10 @@ export default function App() {
     tags: [],
     folder: "all",
   });
+  // What the Filters dialog edits. Kept apart from `filters` so nothing applies
+  // until Done is pressed; re-synced from `filters` each time the dialog opens,
+  // which is also what discards an abandoned draft (Escape / backdrop / Cancel).
+  const [draftFilters, setDraftFilters] = useState(filters);
 
   // Sort preference is separate from filters (different concern) and persisted
   // via its own module, so it survives reloads. Default "manual".
@@ -563,7 +567,10 @@ export default function App() {
             type="button"
             variant="secondary"
             aria-label={filterActive ? "Filters (active)" : "Filters"}
-            onClick={() => filterDialog.current.showModal()}
+            onClick={() => {
+              setDraftFilters(filters);
+              filterDialog.current.showModal();
+            }}
           >
             Filters
             {filterActive && (
@@ -749,9 +756,10 @@ export default function App() {
           </form>
         </dialog>
 
-        {/* Filter popup. Same native <dialog> pattern. Filter changes apply live
-            (onChange updates state immediately), so there is no Apply button —
-            "Done" just closes. */}
+        {/* Filter popup. Same native <dialog> pattern. Edits go to draftFilters
+            and only reach `filters` — and therefore the list — when Done is
+            pressed. Escape and backdrop-click just close, leaving the draft
+            uncommitted; opening the dialog re-syncs it from `filters`. */}
         <dialog
           ref={filterDialog}
           aria-labelledby="filter-title"
@@ -764,15 +772,18 @@ export default function App() {
             Filters
           </h2>
           <FilterControls
-            filters={filters}
-            onChange={setFilters}
+            filters={draftFilters}
+            onChange={setDraftFilters}
             availableTags={availableTags}
             availableFolders={folders}
           />
           <Button
             type="button"
             variant="primary"
-            onClick={() => filterDialog.current.close()}
+            onClick={() => {
+              setFilters(draftFilters);
+              filterDialog.current.close();
+            }}
             className="mt-3 w-full sm:w-auto"
           >
             Done
