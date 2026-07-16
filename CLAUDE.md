@@ -26,6 +26,9 @@ Artinya:
 - Tanpa library state management. useState/useReducer + context kalau perlu.
 - **Jangan tambah dependency baru tanpa tanya dulu.** Termasuk date library dan
   drag-and-drop library.
+- Pengecualian yang sudah disetujui: `@dnd-kit` (core + sortable + utilities)
+  untuk reorder drag (mouse + touch + keyboard). Ini satu-satunya library di
+  luar aturan default; penambahan lain tetap harus ditanyakan.
 
 ## Cara menjalankan
 
@@ -66,16 +69,27 @@ Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
 - Progress bar dari seluruh task + baris "Showing X of Y tasks".
 - Token warna + komponen `Button`, dark mode, responsif (satu breakpoint `sm:`).
 - Sort By: Manual / Priority / Deadline (`src/lib/sortTasks.js`).
-- Reorder manual: drag & drop native + tombol ↑↓ (aktif hanya saat Manual).
+- Reorder manual via `@dnd-kit` (pointer + touch + keyboard, DragOverlay); tombol
+  ↑↓ dihapus. Aktif hanya saat Sort = Manual & tak terfilter.
 - Tampilan deadline sesuai aturan "Deadline > Tampilan" (`formatDeadline`).
+- Validasi/sanitasi bentuk tiap task di `readState()` (`sanitizeTask`): task
+  rusak dibuang (tanpa id/title) atau di-coerce (field lain), tidak meng-crash
+  app dan tidak menimpa data buruk.
+- Trim input tag sebelum cek kosong (tag berisi spasi tidak lagi jadi chip yang
+  hilang diam-diam saat disimpan).
+- Semantik keyboard/tombol untuk judul yang diklik (a11y): `role="button"`,
+  fokusabel, Enter/Space, `aria-label`.
+- Konfirmasi hapus inline dua-langkah (Delete → Confirm/Cancel), state lokal
+  per-baris di `TaskRow`.
+- New task & Filters di balik tombol popup native `<dialog>` (Escape/backdrop
+  close, focus-trap bawaan); tombol Filters punya indikator filter aktif; Sort
+  By tetap terlihat di halaman. Token `--color-overlay` untuk backdrop.
+- Undo hapus terakhir (`restoreTask`), memulihkan task ke posisi semula; baris
+  Undo persisten sampai aksi task berikutnya.
 
 ## Backlog (belum dikerjakan — catatan, bukan janji)
 
-- Validasi/sanitasi bentuk tiap task saat dibaca di `readState()` supaya data
-  localStorage yang rusak tidak meng-crash app.
-- Trim input tag sebelum cek kosong (tag berisi spasi kini masuk lalu hilang
-  diam-diam saat disimpan).
-- Semantik keyboard/tombol untuk span judul yang diklik untuk edit (a11y).
+- (kosong untuk saat ini)
 
 ---
 

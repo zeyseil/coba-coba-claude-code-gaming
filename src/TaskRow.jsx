@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { getTaskStatus } from "./lib/taskStatus";
 import { toISODeadline, fromISODeadline, formatDeadline } from "./lib/deadline";
 import Button from "./Button";
@@ -17,16 +19,7 @@ const FIELD =
 // One task row. Owns only its local edit state; the task list and all storage
 // mutations live in App. onUpdate returns true on success so the row knows
 // whether to leave edit mode. `now` is injected from App for status.
-export default function TaskRow({
-  task,
-  now,
-  index,
-  total,
-  reorderable,
-  onReorder,
-  onUpdate,
-  onDelete,
-}) {
+export default function TaskRow({ task, now, reorderable, onUpdate, onDelete }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [draftPriority, setDraftPriority] = useState("medium");
@@ -34,6 +27,9 @@ export default function TaskRow({
   const [draftTime, setDraftTime] = useState("");
   const [draftTags, setDraftTags] = useState([]);
   const [draftTagInput, setDraftTagInput] = useState("");
+  // Two-step delete confirmation lives here, local to the row (same pattern as
+  // isEditing). Delete only removes the task after an explicit Confirm.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   function startEdit() {
     const { date, time } = fromISODeadline(task.deadline);
@@ -43,12 +39,18 @@ export default function TaskRow({
     setDraftTime(time);
     setDraftTags(task.tags);
     setDraftTagInput("");
+    // Clear any pending delete confirmation so it doesn't linger when the row
+    // returns from edit mode to the view mode.
+    setConfirmingDelete(false);
     setIsEditing(true);
   }
 
   function addDraftTag() {
-    if (draftTagInput === "") return;
-    setDraftTags([...draftTags, draftTagInput]);
+    // Trim before the empty check: a whitespace-only tag would otherwise show
+    // as a chip, then get silently dropped by normalizeTags on save.
+    const tag = draftTagInput.trim();
+    if (tag === "") return;
+    setDraftTags([...draftTags, tag]);
     setDraftTagInput("");
   }
 
@@ -72,22 +74,32 @@ export default function TaskRow({
 
   const status = getTaskStatus(task, now);
 
-  // Drop target lives on the row, but only while reordering is allowed. onDragOver
-  // must preventDefault so onDrop can fire. The dragged source index travels in
-  // the native dataTransfer — no React state needed.
-  const dragProps = reorderable
-    ? {
-        onDragOver: (e) => e.preventDefault(),
-        onDrop: (e) => {
-          e.preventDefault();
-          const from = Number(e.dataTransfer.getData("text/plain"));
-          if (!Number.isNaN(from)) onReorder(from, index);
-        },
-      }
-    : {};
+  // Sortable wiring from @dnd-kit. Disabled unless reordering is allowed (Sort =
+  // Manual and unfiltered), matching the spec. The DndContext + drag logic live
+  // in App; this hook only reports position and exposes the drag handle props.
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id, disabled: !reorderable });
+
+  const sortableStyle = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
 
   return (
-    <li className="flex flex-wrap items-center gap-3 px-4 py-3" {...dragProps}>
+    <li
+      ref={setNodeRef}
+      style={sortableStyle}
+      className={`flex flex-wrap items-center gap-3 px-4 py-3 ${
+        isDragging ? "opacity-40" : ""
+      }`}
+    >
       <input
         type="checkbox"
         checked={task.completed}
@@ -176,41 +188,37 @@ export default function TaskRow({
         </form>
       ) : (
         <>
+          {/* Drag handle. @dnd-kit listeners drive mouse, touch, AND keyboard
+              reorder (Space to lift, arrows to move, Space to drop — announced
+              to screen readers). touch-action:none lets touch-drag work without
+              scrolling the list. */}
           {reorderable && (
-            <>
-              <span
-                draggable
-                onDragStart={(e) =>
-                  e.dataTransfer.setData("text/plain", String(index))
-                }
-                className="cursor-grab select-none text-text-muted"
-                aria-hidden="true"
-              >
-                ⠿
-              </span>
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Move up"
-                disabled={index === 0}
-                onClick={() => onReorder(index, index - 1)}
-              >
-                ↑
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Move down"
-                disabled={index === total - 1}
-                onClick={() => onReorder(index, index + 1)}
-              >
-                ↓
-              </Button>
-            </>
+            <button
+              type="button"
+              ref={setActivatorNodeRef}
+              {...attributes}
+              {...listeners}
+              aria-label={`Drag to reorder: ${task.title}`}
+              className="cursor-grab select-none px-1 text-text-muted [touch-action:none] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              ⠿
+            </button>
           )}
+          {/* Stays a <span> (not <button>) to keep the flex/line-clamp layout
+              and line-through style; we add button semantics + keyboard support
+              so it's operable and announced as a control. */}
           <span
+            role="button"
+            tabIndex={0}
+            aria-label={`Edit task: ${task.title}`}
             onClick={startEdit}
-            className={`min-w-0 basis-full sm:basis-auto sm:flex-1 cursor-pointer break-words line-clamp-2 text-sm text-text ${
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault(); // Space would otherwise scroll the page
+                startEdit();
+              }
+            }}
+            className={`min-w-0 basis-full sm:basis-auto sm:flex-1 cursor-pointer break-words line-clamp-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
               task.completed ? "line-through text-text-muted" : ""
             }`}
           >
@@ -239,9 +247,27 @@ export default function TaskRow({
               {tag}
             </span>
           ))}
-          <Button variant="danger" onClick={() => onDelete(task.id)}>
-            Delete
-          </Button>
+          {confirmingDelete ? (
+            <>
+              <Button
+                variant="danger"
+                aria-label={`Confirm delete: ${task.title}`}
+                onClick={() => onDelete(task.id)}
+              >
+                Confirm
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmingDelete(false)}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button variant="danger" onClick={() => setConfirmingDelete(true)}>
+              Delete
+            </Button>
+          )}
         </>
       )}
     </li>
