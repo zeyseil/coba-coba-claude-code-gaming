@@ -1,0 +1,33 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "To-Do List Modern desktop wrapper"
+authors = ["you"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+# tray-icon: the app lives in the tray, so the window can be closed while
+# reminders keep firing. Without this feature TrayIconBuilder does not exist.
+tauri = { version = "2.11.3", features = ["tray-icon"] }
+tauri-plugin-notification = "2"
+# Autostart is written by hand in autostart.rs, not via tauri-plugin-autostart:
+# that plugin's auto-launch crate writes the Run key without quoting the path,
+# which breaks on any machine whose user or install directory has a space.
+winreg = "0.52"
+# Autostart can race a manual launch, and two copies would fire every reminder
+# twice. This makes the second launch hand off to the first instead.
+tauri-plugin-single-instance = "2"

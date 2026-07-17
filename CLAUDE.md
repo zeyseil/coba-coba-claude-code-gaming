@@ -57,7 +57,13 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-17 (sesi keempat hari ini: OS-level Local Notification via Capacitor —
+2026-07-17 (sesi kelima hari ini: Desktop Wrapper via Tauri v2 — tray +
+scheduler reminder di proses Rust + autostart Windows, sehingga reminder muncul
+walau window ditutup; `storage.js` TIDAK disentuh karena tray hanya butuh
+`[{title, fireAt}]`, bukan database task — ini mengoreksi klaim lama di Backlog
+bahwa fitur ini butuh pindah dari localStorage; `App.jsx` juga nol perubahan.
+Lihat entri "Desktop Wrapper (Tauri)" di bawah. Sesi keempat hari ini: OS-level
+Local Notification via Capacitor —
 NotificationService sebagai satu-satunya pemanggil Capacitor, fungsi murni
 baru `getScheduledReminders` di `reminder.js`, sync via satu `useEffect` di
 `App.jsx`, scaffold native `android/` + AndroidManifest; mengikuti
@@ -90,6 +96,139 @@ kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi eksplisit
 ke user, lihat detail di bawah).
 
 ## Sudah jadi
+
+- Desktop Wrapper (Tauri v2) — reminder muncul di Windows walau window ditutup.
+  Melanjutkan Local Notification: Capacitor menutup Android, ini menutup desktop.
+  **Tauri, bukan Electron** — dipilih user setelah perbandingan eksplisit
+  (rekomendasi saya waktu itu Electron, karena proses main-nya JavaScript
+  sehingga bisa direview user sendiri sesuai baris 1 CLAUDE.md; user memilih
+  Tauri sadar akan biayanya: Rust di proses main + toolchain MSVC). Ternyata
+  Rust + MSVC + WebView2 **sudah terpasang** di mesin dev, jadi tidak ada
+  pengulangan derita toolchain sesi Android.
+  **Keputusan terpenting: `storage.js` TIDAK disentuh sama sekali** — ini
+  membalik klaim lama di Backlog bahwa fitur ini butuh memindahkan penyimpanan
+  keluar dari localStorage. Klaim itu salah: proses tray tidak butuh database
+  task, ia cuma butuh hasil `getScheduledReminders`, yaitu `[{title, fireAt}]`.
+  Task tidak bisa berubah tanpa window terbuka, jadi renderer cukup mendorong
+  daftar itu lewat IPC tiap kali berubah dan Rust menyimpannya ke satu file JSON
+  kecil (`%APPDATA%\com.todolistmodern.desktop\reminders.json`). Cache tidak
+  bisa basi. Konsekuensi: tidak ada field baru di Task, tidak ada bump schema
+  (tetap v4), dan **`App.jsx` nol perubahan** — efek `[tasks, reminderOffset]`
+  yang sudah ada otomatis menutup semua aksi task, dan banner "open Settings"
+  otomatis inert karena permission desktop tidak pernah `"denied"`. Ini buah
+  dari seam yang sudah benar di sesi Capacitor.
+  Arsitektur: **`notificationService.js` tetap satu-satunya file yang tahu soal
+  platform** — identitasnya melebar dari Capacitor-aware jadi platform-aware
+  lewat `platform()` → `"capacitor"` | `"tauri"` | `"web"` (Tauri v2 dideteksi
+  dari global `window.__TAURI_INTERNALS__`). Policy penjadwalan **dipakai ulang
+  100%**: `getScheduledReminders` di `reminder.js` tidak diubah satu baris pun
+  dan melayani Android maupun desktop. Di sisi Rust, satu-satunya aturan waktu
+  ada di fungsi murni `partition_due(reminders, now_ms)`
+  (`src-tauri/src/scheduler.rs`), terpisah dari Tauri supaya bisa dites;
+  `lib.rs` cuma plumbing.
+  **Polling, bukan timer per-reminder**: satu thread `std::thread` yang tidur
+  30 detik lalu memeriksa `fire_at <= now_ms`. Ini sengaja — timer yang diset
+  berjam-jam ke depan hilang saat mesin sleep, meleset saat jam/timezone
+  berubah, dan diam-diam salah di atas plafon ~24 hari. Polling cuma "sadar" di
+  tick berikutnya. Karena itu **tidak perlu power-monitor API** (Tauri tidak
+  punya bawaannya) — sleep/resume tertangani gratis. Reminder yang terlewat saat
+  mesin tidur **fire telat, bukan dibuang** (konsisten `allowWhileIdle` Android).
+  Sengaja **tanpa `tokio`** (thread biasa, tidak ada async lain di app ini) dan
+  **tanpa `chrono`**: `fireAt` dikirim sebagai epoch millis (`fireAt.getTime()`),
+  bukan ISO string, sehingga Rust tidak pernah mem-parse tanggal dan aturannya
+  jadi perbandingan integer.
+  Tray: Open / "Start with Windows" (CheckMenuItem) / Quit. **Close = hide, bukan
+  quit** (`CloseRequested` → `prevent_close` + `hide`) — kalau close mengakhiri
+  proses, seluruh premis fitur ini gugur. `tauri-plugin-single-instance` dipakai
+  karena autostart bisa balapan dengan launch manual, dan dua salinan akan
+  menembakkan tiap reminder dua kali. Toggle autostart membaca balik
+  `is_enabled()` setelah menulis, bukan mempercayai centangnya sendiri — checkbox
+  yang berbohong lebih buruk daripada tidak ada.
+  **Autostart ditulis sendiri di `src-tauri/src/autostart.rs`, BUKAN lewat
+  `tauri-plugin-autostart`** — jangan "rapikan" ini kembali ke plugin. Plugin itu
+  (lewat crate `auto-launch` 0.5.0) menulis Run key sebagai
+  `format!("{} {}", app_path, args)` **tanpa kutip sama sekali**
+  (`tauri-plugin-autostart-2.5.1/src/lib.rs:189` mengoper path mentah dari
+  `current_exe()`, lalu `auto-launch-0.5.0/src/windows.rs` menggabungkannya
+  begitu saja). Windows memecah value Run tanpa kutip di spasi pertama, jadi
+  `C:\Users\M Sulthon R\AppData\Local\To-Do List Modern\app.exe --hidden` dibaca
+  sebagai "jalankan `C:\Users\M`". Ini **terbukti di mesin dev**: entri muncul di
+  Task Manager dengan nama **"M"**, bukan "To-Do List Modern", dan app tidak
+  pernah menyala setelah restart. Username user *dan* folder instalasi
+  dua-duanya berspasi, jadi tidak ada cara menghindarinya. Menyelipkan kutip ke
+  dalam path yang dioper ke plugin juga bisa, tapi cuma dengan bergantung pada
+  bug itu tidak pernah diperbaiki upstream (kalau diperbaiki → kutip ganda).
+  Modul sendiri: `run_command()` (fungsi murni, selalu mengutip, dites termasuk
+  kasus `C:\Users\M`), plus `enable`/`disable`/`is_enabled` langsung ke `winreg`.
+  `is_enabled` mensyaratkan **dua** hal sekaligus — value Run ada DAN
+  `StartupApproved\Run` tidak menonaktifkannya (byte 0: `0x02` = enabled,
+  `0x03` = disabled; 8 byte terakhir = timestamp saat dinonaktifkan, nol kalau
+  aktif) — sebab flag Task Manager menang atas keberadaan value Run.
+  **Batas platform yang jujur: Windows TIDAK punya padanan `AlarmManager`.**
+  Tidak ada alarm OS yang bisa dititipi lalu app boleh mati. Prosesnya **wajib
+  hidup**, jadi tray + autostart di sini bukan pelengkap melainkan syarat mati —
+  beda mendasar dari Android yang benar-benar menitipkan alarm ke OS.
+  **Packaging dikerjakan** (membalik keputusan awal "tanpa packaging", yang
+  diambil di konteks Electron): toast Windows butuh AppUserModelID terdaftar
+  lewat shortcut Start Menu, dan binary `tauri dev` mentah tidak punya itu —
+  terbukti terukur, `HKCU\Software\Classes\AppUserModelId\com.todolistmodern.desktop`
+  kosong sebelum install. Autostart juga butuh binary stabil, bukan
+  `target/debug/`. Bundler Tauri bawaan dan binary build lokal tidak kena
+  SmartScreen, jadi kedua keberatan asli terhadap packaging tidak berlaku.
+  Identifier `com.todolistmodern.desktop` sengaja **beda** dari Capacitor
+  `com.todolistmodern.app` — app terpisah, AUMID terpisah.
+  `vite.config.js` cuma dapat `server.strictPort: true` (nol dampak ke
+  `vite build`, jadi build Android aman): tanpa itu vite diam-diam pindah port
+  saat 5173 terpakai sementara `devUrl` menunjuk 5173, sehingga `tauri dev`
+  memuat app lain yang menyamar sebagai app ini — sempat benar-benar terjadi
+  saat sesi ini.
+  **Dependency baru (disetujui eksplisit):** npm `@tauri-apps/api`, dev
+  `@tauri-apps/cli`; Cargo `tauri` (feature `tray-icon`),
+  `tauri-plugin-notification`, `tauri-plugin-single-instance`, `serde`,
+  `serde_json`, `winreg`. `tauri-plugin-autostart` **dipakai lalu dibuang** —
+  lihat alasan quoting di atas; `winreg` menggantikannya (net: tetap satu
+  dependency, dan `winreg` sebelumnya sudah ikut transitif lewat plugin itu).
+  `tauri-plugin-log` + `log` yang ditambahkan `tauri init` **dibuang** — tidak
+  ditanyakan, dan `println!` sudah cukup. Test runner kedua: `npm run test:rust`
+  (`cargo test`, 13 test: 8 untuk `partition_due` termasuk yang mengunci wire
+  format `fireAt`, 5 untuk quoting autostart); `npm run test` tetap vitest
+  18 test.
+  **Verifikasi — SUDAH terbukti otomatis:** (1) rantai IPC penuh, di build dev
+  maupun release (`reminders.json` dihapus → app dijalankan → file lahir kembali
+  berisi `[]`, yang hanya mungkin kalau renderer termuat → `platform()`
+  mengenali Tauri → `invoke` sampai ke command Rust → cache ditulis); (2) tick
+  loop menembakkan reminder **tanpa renderer sama sekali** — vite dimatikan
+  supaya renderer gagal memuat dan tidak bisa menimpa cache, reminder disuntik
+  dengan `fireAt` 40 detik ke depan, lalu cache terkuras sendiri jadi `[]` tepat
+  di tick pertama; ini persis skenario autostart-ke-tray; (3) 8 test `cargo test`
+  untuk `partition_due` + 18 test vitest tetap hijau; (4) AUMID: terukur
+  **kosong** sebelum install, dan setelah install shortcut Start Menu membawa
+  `System.AppUserModel.ID = com.todolistmodern.desktop` — ini mengonfirmasi
+  diagnosis bahwa `tauri dev` mentah tidak bisa menampilkan toast.
+  **Terverifikasi user (sesi susulan):** toast Windows benar-benar TERLIHAT
+  ("Task due soon" + judul task, di bawah header "To-Do List Modern"), dan tray
+  Open/Quit berfungsi. **Autostart: bug ditemukan lalu diperbaiki, dan
+  perbaikannya terverifikasi lewat restart Windows sungguhan** — Task Manager
+  menampilkan "To-Do List Modern" (publisher "todolistmodern") berstatus
+  Enabled, dan app benar-benar muncul kembali di tray setelah reboot tanpa
+  perlu dibuka manual. Entri lama "M" (BingSvc milik Microsoft, kena bug
+  quoting yang sama) tetap terpisah dan Disabled — mengonfirmasi diagnosis
+  bahwa "M" bukan entri kita.
+  **Pelajaran penting soal lingkungan verifikasi:** shell PowerShell yang saya
+  pakai adalah anak dari Claude Desktop, yang ternyata aplikasi MSIX
+  (`Claude_pzs8sxrjxfjjc`), sehingga **mewarisi virtualisasi paketnya** —
+  `Start-Process` ke path asli melahirkan proses yang melaporkan dirinya di
+  `...\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\...`, dan pembacaan
+  `HKCU\...\Run` dari sana **tidak melihat registry asli** (entri autostart yang
+  nyata-nyata ada tetap terbaca kosong berkali-kali). Ini sempat menyesatkan
+  diagnosis ke arah yang salah dua kali (Wise Disk Cleaner, lalu BingSvc).
+  Konsekuensi untuk sesi berikutnya: **apa pun yang menyangkut registry HKCU
+  asli, path instalasi, atau perilaku boot TIDAK bisa diverifikasi dari shell —
+  wajib lewat user.** Yang tetap sahih diverifikasi dari shell: `cargo test`,
+  `npm run test`, build, dan file di bawah `%APPDATA%` (terbukti konsisten).
+  Yang di luar scope: macOS/Linux, code signing, WinRT
+  `ScheduledToastNotification` (satu-satunya jalan agar reminder fire dengan
+  proses mati; butuh binding native).
 
 - Local Notification (Capacitor) — reminder tingkat OS, local-only. Melanjutkan
   reminder in-app: banner in-app hanya terlihat saat app dibuka; fitur ini
@@ -134,14 +273,27 @@ ke user, lihat detail di bawah).
   eksplisit):** `@capacitor/core`, `@capacitor/local-notifications`,
   `@capacitor/android`, dev `@capacitor/cli`. Test baru untuk
   `getScheduledReminders` di `reminder.test.js` (fireAt, past-fire dibuang,
-  completed/no-deadline dibuang, offset null). **Batas verifikasi jujur:** build
-  Android tidak dijalankan di sesi ini (mesin Windows tanpa JDK 17/Android
-  SDK) — logika (vitest) & jalur Web fallback (browser, nol error console)
-  terverifikasi; AC "notifikasi benar-benar muncul di device" adalah langkah
-  manual user (pasang Android Studio → `npx cap sync android` → run di
-  device/emulator). iOS **tidak dikerjakan** (butuh macOS). Yang sengaja di
-  luar scope sesuai spec Non-Goals: Push/FCM/APNs, Hybrid/Silent Push,
-  Notification History, Snooze, AI Reminder, Cloud Sync.
+  completed/no-deadline dibuang, offset null). **Verifikasi Android — DIPERBARUI
+  sesi susulan (masih 2026-07-17):** user memasang Android Studio (bundled JBR
+  JDK 21) dan menyediakan emulator **LDPlayer 9**; Android SDK command-line
+  tools (`platform-tools`, `platforms;android-34`, `build-tools;34.0.0`)
+  dipasang lewat `sdkmanager` atas izin eksplisit user. Build sempat gagal
+  `Unable to establish loopback connection` — bug JDK Windows saat
+  `java.io.tmpdir`/`TMP`/`TEMP` menunjuk path panjang berspasi; diperbaiki
+  dengan mengarahkan `TMP`/`TEMP` ke path pendek tanpa spasi (`C:\gradletmp`).
+  Junction tanpa-spasi (`C:\jbr`, `C:\androidsdk`) juga dibuat karena beberapa
+  script `.bat` Android SDK pecah kalau path mengandung spasi. `./gradlew.bat
+  assembleDebug` **BUILD SUCCESSFUL**, `app-debug.apk` dihasilkan. Diinstal ke
+  LDPlayer via `ldconsole.exe installapp`/`launchex` (koneksi ADB TCP standar
+  ke port LDPlayer `2222` gagal — device selalu "offline" walau port terbuka
+  dan versi adb cocok, root cause belum ditelusuri karena `ldconsole` sudah
+  cukup untuk install/launch; akibatnya **logcat tidak bisa diambil** sesi
+  ini). **AC "reminder muncul sesuai jadwal" TERVERIFIKASI on-device**: user
+  menjadwalkan task dengan deadline ~1 jam ke depan + offset "1 hour before",
+  dan notifikasi Android asli ("Task due soon" + judul task) muncul tepat
+  waktu di LDPlayer. iOS **tetap tidak dikerjakan** (butuh macOS). Yang
+  sengaja di luar scope sesuai spec Non-Goals: Push/FCM/APNs, Hybrid/Silent
+  Push, Notification History, Snooze, AI Reminder, Cloud Sync.
 
 - Reminder / pengingat in-app (local-only). Keputusan "Di luar scope" untuk
   pengingat/notifikasi **dibalik atas permintaan eksplisit user**. Sesi ini
@@ -494,13 +646,14 @@ ke user, lihat detail di bawah).
   active/paused yang bisa di-toggle) — ditunda sampai diminta.
 - Filter "Recurring only" / bulk action recurring di `SelectionBar` —
   ditunda sampai diminta.
-- **Desktop wrapper (Electron/Tauri): system tray + autostart Windows +
-  notifikasi native**, supaya pengingat muncul tanpa membuka browser. Feasible
-  dan sesuai visi user, tapi ini proyek tersendiri (butuh build pipeline kedua
-  + memindahkan penyimpanan keluar dari localStorage karena proses tray perlu
-  baca data saat window ditutup) — layak dapat spec sendiri seperti Calendar/
-  Recurring. Reminder engine (`src/lib/reminder.js`) sudah siap dipakai ulang
-  di sini tanpa perubahan. Ditunda sampai diminta.
+- **Desktop wrapper — SUDAH DIKERJAKAN** (Tauri v2; lihat entri "Desktop Wrapper
+  (Tauri v2)" di "Sudah jadi"). Catatan lama di sini memperkirakan fitur ini
+  butuh "memindahkan penyimpanan keluar dari localStorage karena proses tray
+  perlu baca data saat window ditutup" — **itu terbukti salah**: tray tidak
+  butuh database task, cuma `[{title, fireAt}]`, jadi `storage.js` tidak
+  disentuh sama sekali. Perkiraan bahwa reminder engine bisa dipakai ulang tanpa
+  perubahan **terbukti benar**: `reminder.js` nol perubahan. Sisa yang memang
+  masih terbuka: macOS/Linux (butuh mesin lain, perilaku tray/autostart beda).
 - **Mobile background notification — jalur Android SUDAH dikerjakan** (lihat
   entri "Local Notification (Capacitor)" di "Sudah jadi"): Capacitor Local
   Notifications, app menitipkan alarm ke OS lalu boleh mati, reschedule
@@ -704,7 +857,10 @@ login, sinkronisasi database.
 di atas — sesuai `.claude/Engineering-Spec-Calendar-View.md` dan
 `.claude/Engineering-Spec-Recurring-Task.md`. Pengingat/notifikasi in-app
 juga sudah dikerjakan — lihat "Reminder / pengingat in-app" di "Sudah jadi".
-Wrapper desktop/mobile untuk notifikasi di luar browser masih di Backlog.)
+Wrapper untuk notifikasi di luar browser juga sudah dikerjakan di kedua sisi:
+Android lewat Capacitor, Windows desktop lewat Tauri — lihat entri
+"Local Notification (Capacitor)" dan "Desktop Wrapper (Tauri v2)". Yang tersisa
+cuma iOS dan macOS/Linux, keduanya terhalang ketersediaan mesin.)
 
 ---
 
