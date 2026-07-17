@@ -207,9 +207,13 @@ ke user, lihat detail di bawah).
   diagnosis bahwa `tauri dev` mentah tidak bisa menampilkan toast.
   **Terverifikasi user (sesi susulan):** toast Windows benar-benar TERLIHAT
   ("Task due soon" + judul task, di bawah header "To-Do List Modern"), dan tray
-  Open/Quit berfungsi. **Autostart: bug ditemukan lalu diperbaiki** — lihat
-  entri quoting di atas; perbaikannya belum diverifikasi user lewat restart
-  sungguhan.
+  Open/Quit berfungsi. **Autostart: bug ditemukan lalu diperbaiki, dan
+  perbaikannya terverifikasi lewat restart Windows sungguhan** — Task Manager
+  menampilkan "To-Do List Modern" (publisher "todolistmodern") berstatus
+  Enabled, dan app benar-benar muncul kembali di tray setelah reboot tanpa
+  perlu dibuka manual. Entri lama "M" (BingSvc milik Microsoft, kena bug
+  quoting yang sama) tetap terpisah dan Disabled — mengonfirmasi diagnosis
+  bahwa "M" bukan entri kita.
   **Pelajaran penting soal lingkungan verifikasi:** shell PowerShell yang saya
   pakai adalah anak dari Claude Desktop, yang ternyata aplikasi MSIX
   (`Claude_pzs8sxrjxfjjc`), sehingga **mewarisi virtualisasi paketnya** —
