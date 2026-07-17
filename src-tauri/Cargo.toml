@@ -24,7 +24,10 @@ serde = { version = "1.0", features = ["derive"] }
 # reminders keep firing. Without this feature TrayIconBuilder does not exist.
 tauri = { version = "2.11.3", features = ["tray-icon"] }
 tauri-plugin-notification = "2"
-tauri-plugin-autostart = "2"
+# Autostart is written by hand in autostart.rs, not via tauri-plugin-autostart:
+# that plugin's auto-launch crate writes the Run key without quoting the path,
+# which breaks on any machine whose user or install directory has a space.
+winreg = "0.52"
 # Autostart can race a manual launch, and two copies would fire every reminder
 # twice. This makes the second launch hand off to the first instead.
 tauri-plugin-single-instance = "2"

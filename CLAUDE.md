@@ -144,6 +144,26 @@ ke user, lihat detail di bawah).
   menembakkan tiap reminder dua kali. Toggle autostart membaca balik
   `is_enabled()` setelah menulis, bukan mempercayai centangnya sendiri — checkbox
   yang berbohong lebih buruk daripada tidak ada.
+  **Autostart ditulis sendiri di `src-tauri/src/autostart.rs`, BUKAN lewat
+  `tauri-plugin-autostart`** — jangan "rapikan" ini kembali ke plugin. Plugin itu
+  (lewat crate `auto-launch` 0.5.0) menulis Run key sebagai
+  `format!("{} {}", app_path, args)` **tanpa kutip sama sekali**
+  (`tauri-plugin-autostart-2.5.1/src/lib.rs:189` mengoper path mentah dari
+  `current_exe()`, lalu `auto-launch-0.5.0/src/windows.rs` menggabungkannya
+  begitu saja). Windows memecah value Run tanpa kutip di spasi pertama, jadi
+  `C:\Users\M Sulthon R\AppData\Local\To-Do List Modern\app.exe --hidden` dibaca
+  sebagai "jalankan `C:\Users\M`". Ini **terbukti di mesin dev**: entri muncul di
+  Task Manager dengan nama **"M"**, bukan "To-Do List Modern", dan app tidak
+  pernah menyala setelah restart. Username user *dan* folder instalasi
+  dua-duanya berspasi, jadi tidak ada cara menghindarinya. Menyelipkan kutip ke
+  dalam path yang dioper ke plugin juga bisa, tapi cuma dengan bergantung pada
+  bug itu tidak pernah diperbaiki upstream (kalau diperbaiki → kutip ganda).
+  Modul sendiri: `run_command()` (fungsi murni, selalu mengutip, dites termasuk
+  kasus `C:\Users\M`), plus `enable`/`disable`/`is_enabled` langsung ke `winreg`.
+  `is_enabled` mensyaratkan **dua** hal sekaligus — value Run ada DAN
+  `StartupApproved\Run` tidak menonaktifkannya (byte 0: `0x02` = enabled,
+  `0x03` = disabled; 8 byte terakhir = timestamp saat dinonaktifkan, nol kalau
+  aktif) — sebab flag Task Manager menang atas keberadaan value Run.
   **Batas platform yang jujur: Windows TIDAK punya padanan `AlarmManager`.**
   Tidak ada alarm OS yang bisa dititipi lalu app boleh mati. Prosesnya **wajib
   hidup**, jadi tray + autostart di sini bukan pelengkap melainkan syarat mati —
@@ -164,12 +184,15 @@ ke user, lihat detail di bawah).
   saat sesi ini.
   **Dependency baru (disetujui eksplisit):** npm `@tauri-apps/api`, dev
   `@tauri-apps/cli`; Cargo `tauri` (feature `tray-icon`),
-  `tauri-plugin-notification`, `tauri-plugin-autostart`,
-  `tauri-plugin-single-instance`, `serde`, `serde_json`. `tauri-plugin-log` +
-  `log` yang ditambahkan `tauri init` **dibuang** — tidak ditanyakan, dan
-  `println!` sudah cukup. Test runner kedua: `npm run test:rust` (`cargo test`,
-  8 test untuk `partition_due` termasuk yang mengunci wire format `fireAt`);
-  `npm run test` tetap vitest 18 test.
+  `tauri-plugin-notification`, `tauri-plugin-single-instance`, `serde`,
+  `serde_json`, `winreg`. `tauri-plugin-autostart` **dipakai lalu dibuang** —
+  lihat alasan quoting di atas; `winreg` menggantikannya (net: tetap satu
+  dependency, dan `winreg` sebelumnya sudah ikut transitif lewat plugin itu).
+  `tauri-plugin-log` + `log` yang ditambahkan `tauri init` **dibuang** — tidak
+  ditanyakan, dan `println!` sudah cukup. Test runner kedua: `npm run test:rust`
+  (`cargo test`, 13 test: 8 untuk `partition_due` termasuk yang mengunci wire
+  format `fireAt`, 5 untuk quoting autostart); `npm run test` tetap vitest
+  18 test.
   **Verifikasi — SUDAH terbukti otomatis:** (1) rantai IPC penuh, di build dev
   maupun release (`reminders.json` dihapus → app dijalankan → file lahir kembali
   berisi `[]`, yang hanya mungkin kalau renderer termuat → `platform()`
@@ -182,13 +205,23 @@ ke user, lihat detail di bawah).
   **kosong** sebelum install, dan setelah install shortcut Start Menu membawa
   `System.AppUserModel.ID = com.todolistmodern.desktop` — ini mengonfirmasi
   diagnosis bahwa `tauri dev` mentah tidak bisa menampilkan toast.
-  **BELUM terverifikasi (butuh mata & klik user, bukan sesuatu yang bisa
-  diotomasi):** toast yang benar-benar TERLIHAT di layar (pipeline-nya terbukti,
-  tampilannya belum), perilaku tray (Open / close-to-hide / Quit), dan toggle
-  autostart beserta entri registry-nya. Alasannya: window native tidak bisa
-  dipotret dan menu tray tidak bisa diklik dari sini, dan tidak ada cara
-  menyuntik task ke localStorage WebView2 dari luar (LevelDB), sehingga tidak
-  ada jalan membuat renderer menghasilkan reminder sungguhan tanpa tangan user.
+  **Terverifikasi user (sesi susulan):** toast Windows benar-benar TERLIHAT
+  ("Task due soon" + judul task, di bawah header "To-Do List Modern"), dan tray
+  Open/Quit berfungsi. **Autostart: bug ditemukan lalu diperbaiki** — lihat
+  entri quoting di atas; perbaikannya belum diverifikasi user lewat restart
+  sungguhan.
+  **Pelajaran penting soal lingkungan verifikasi:** shell PowerShell yang saya
+  pakai adalah anak dari Claude Desktop, yang ternyata aplikasi MSIX
+  (`Claude_pzs8sxrjxfjjc`), sehingga **mewarisi virtualisasi paketnya** —
+  `Start-Process` ke path asli melahirkan proses yang melaporkan dirinya di
+  `...\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Local\...`, dan pembacaan
+  `HKCU\...\Run` dari sana **tidak melihat registry asli** (entri autostart yang
+  nyata-nyata ada tetap terbaca kosong berkali-kali). Ini sempat menyesatkan
+  diagnosis ke arah yang salah dua kali (Wise Disk Cleaner, lalu BingSvc).
+  Konsekuensi untuk sesi berikutnya: **apa pun yang menyangkut registry HKCU
+  asli, path instalasi, atau perilaku boot TIDAK bisa diverifikasi dari shell —
+  wajib lewat user.** Yang tetap sahih diverifikasi dari shell: `cargo test`,
+  `npm run test`, build, dan file di bawah `%APPDATA%` (terbukti konsisten).
   Yang di luar scope: macOS/Linux, code signing, WinRT
   `ScheduledToastNotification` (satu-satunya jalan agar reminder fire dengan
   proses mati; butuh binding native).

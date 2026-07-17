@@ -13,6 +13,7 @@
 // Notably absent: the task database. This process is told what to say and when,
 // and needs nothing else, so tasks stay in localStorage where they already are.
 
+mod autostart;
 mod scheduler;
 
 use std::fs;
@@ -24,7 +25,6 @@ use scheduler::{partition_due, Reminder};
 use tauri::menu::{CheckMenuItem, Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, State, WindowEvent, Wry};
-use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_notification::NotificationExt;
 
 // How often the tray wakes up to look for reminders that have come due.
@@ -145,43 +145,48 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
-fn toggle_autostart(app: &AppHandle, item: &CheckMenuItem<Wry>) {
-    let manager = app.autolaunch();
-    let was_enabled = manager.is_enabled().unwrap_or(false);
-    let _ = if was_enabled {
-        manager.disable()
+fn toggle_autostart(item: &CheckMenuItem<Wry>) {
+    let result = if autostart::is_enabled() {
+        autostart::disable()
     } else {
-        manager.enable()
+        match std::env::current_exe() {
+            Ok(exe) => autostart::enable(&exe, HIDDEN_FLAG),
+            Err(e) => Err(e),
+        }
     };
+
+    if let Err(e) = result {
+        eprintln!("autostart toggle failed: {e}");
+    }
 
     // Read the registry back instead of trusting the toggle. A CheckMenuItem
     // flips its own tick the moment it is clicked, so if the write failed the
     // menu would claim a setting that is not there — and a checkbox that lies is
     // worse than no checkbox.
-    let _ = item.set_checked(manager.is_enabled().unwrap_or(false));
+    let _ = item.set_checked(autostart::is_enabled());
 }
 
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
     let handle = app.handle();
 
     let open = MenuItem::with_id(handle, "open", "Open", true, None::<&str>)?;
-    let autostart = CheckMenuItem::with_id(
+    let autostart_item = CheckMenuItem::with_id(
         handle,
         "autostart",
         "Start with Windows",
         true,
-        handle.autolaunch().is_enabled().unwrap_or(false),
+        autostart::is_enabled(),
         None::<&str>,
     )?;
     let quit = MenuItem::with_id(handle, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(handle, &[&open, &autostart, &quit])?;
+    let menu = Menu::with_items(handle, &[&open, &autostart_item, &quit])?;
 
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("To-Do List Modern")
         .menu(&menu)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "open" => show_main_window(app),
-            "autostart" => toggle_autostart(app, &autostart),
+            "autostart" => toggle_autostart(&autostart_item),
             "quit" => app.exit(0),
             _ => {}
         });
@@ -204,10 +209,6 @@ pub fn run() {
             show_main_window(app);
         }))
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_autostart::init(
-            MacosLauncher::LaunchAgent,
-            Some(vec![HIDDEN_FLAG]),
-        ))
         .manage(AppState {
             reminders: Mutex::new(Vec::new()),
         })
