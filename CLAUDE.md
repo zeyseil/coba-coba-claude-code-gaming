@@ -134,14 +134,27 @@ ke user, lihat detail di bawah).
   eksplisit):** `@capacitor/core`, `@capacitor/local-notifications`,
   `@capacitor/android`, dev `@capacitor/cli`. Test baru untuk
   `getScheduledReminders` di `reminder.test.js` (fireAt, past-fire dibuang,
-  completed/no-deadline dibuang, offset null). **Batas verifikasi jujur:** build
-  Android tidak dijalankan di sesi ini (mesin Windows tanpa JDK 17/Android
-  SDK) — logika (vitest) & jalur Web fallback (browser, nol error console)
-  terverifikasi; AC "notifikasi benar-benar muncul di device" adalah langkah
-  manual user (pasang Android Studio → `npx cap sync android` → run di
-  device/emulator). iOS **tidak dikerjakan** (butuh macOS). Yang sengaja di
-  luar scope sesuai spec Non-Goals: Push/FCM/APNs, Hybrid/Silent Push,
-  Notification History, Snooze, AI Reminder, Cloud Sync.
+  completed/no-deadline dibuang, offset null). **Verifikasi Android — DIPERBARUI
+  sesi susulan (masih 2026-07-17):** user memasang Android Studio (bundled JBR
+  JDK 21) dan menyediakan emulator **LDPlayer 9**; Android SDK command-line
+  tools (`platform-tools`, `platforms;android-34`, `build-tools;34.0.0`)
+  dipasang lewat `sdkmanager` atas izin eksplisit user. Build sempat gagal
+  `Unable to establish loopback connection` — bug JDK Windows saat
+  `java.io.tmpdir`/`TMP`/`TEMP` menunjuk path panjang berspasi; diperbaiki
+  dengan mengarahkan `TMP`/`TEMP` ke path pendek tanpa spasi (`C:\gradletmp`).
+  Junction tanpa-spasi (`C:\jbr`, `C:\androidsdk`) juga dibuat karena beberapa
+  script `.bat` Android SDK pecah kalau path mengandung spasi. `./gradlew.bat
+  assembleDebug` **BUILD SUCCESSFUL**, `app-debug.apk` dihasilkan. Diinstal ke
+  LDPlayer via `ldconsole.exe installapp`/`launchex` (koneksi ADB TCP standar
+  ke port LDPlayer `2222` gagal — device selalu "offline" walau port terbuka
+  dan versi adb cocok, root cause belum ditelusuri karena `ldconsole` sudah
+  cukup untuk install/launch; akibatnya **logcat tidak bisa diambil** sesi
+  ini). **AC "reminder muncul sesuai jadwal" TERVERIFIKASI on-device**: user
+  menjadwalkan task dengan deadline ~1 jam ke depan + offset "1 hour before",
+  dan notifikasi Android asli ("Task due soon" + judul task) muncul tepat
+  waktu di LDPlayer. iOS **tetap tidak dikerjakan** (butuh macOS). Yang
+  sengaja di luar scope sesuai spec Non-Goals: Push/FCM/APNs, Hybrid/Silent
+  Push, Notification History, Snooze, AI Reminder, Cloud Sync.
 
 - Reminder / pengingat in-app (local-only). Keputusan "Di luar scope" untuk
   pengingat/notifikasi **dibalik atas permintaan eksplisit user**. Sesi ini
