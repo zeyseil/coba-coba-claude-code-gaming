@@ -57,7 +57,13 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-17 (sesi ketiga hari ini: reminder/pengingat in-app local-only —
+2026-07-17 (sesi keempat hari ini: OS-level Local Notification via Capacitor —
+NotificationService sebagai satu-satunya pemanggil Capacitor, fungsi murni
+baru `getScheduledReminders` di `reminder.js`, sync via satu `useEffect` di
+`App.jsx`, scaffold native `android/` + AndroidManifest; mengikuti
+`.claude/Engineering-Spec-Local-Notification.md`, offset tetap global sesuai
+CLAUDE.md, lihat entri "Local Notification (Capacitor)" di bawah. Sesi ketiga
+hari ini: reminder/pengingat in-app local-only —
 engine murni `reminder.js` + modul preferensi `reminderPreference.js` +
 banner due-soon + dropdown offset di `App.jsx`, plus vitest sebagai test
 pertama di repo; keputusan "pengingat di luar scope" dibalik atas permintaan
@@ -84,6 +90,58 @@ kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi eksplisit
 ke user, lihat detail di bawah).
 
 ## Sudah jadi
+
+- Local Notification (Capacitor) — reminder tingkat OS, local-only. Melanjutkan
+  reminder in-app: banner in-app hanya terlihat saat app dibuka; fitur ini
+  menitipkan alarm ke OS lewat Capacitor Local Notifications sehingga reminder
+  muncul walau app tertutup. Tetap local-only (tanpa server/FCM/APNs), jalur
+  yang dulu dicatat di Backlog sebagai satu-satunya yang tidak menggugurkan
+  premis proyek. Mengikuti `.claude/Engineering-Spec-Local-Notification.md`
+  sebagai kontrak (Architecture Notes hanya sebagai alasan teknis). Keputusan
+  penting: **konflik spec vs CLAUDE.md diselesaikan ke arah CLAUDE.md atas
+  konfirmasi eksplisit user** — reminder **tetap offset global**, bukan
+  per-task; konsekuensinya **tidak ada field baru di Task, tidak ada bump
+  schema (tetap v4), `storage.js` tidak disentuh sama sekali**.
+  Arsitektur: **`src/lib/notificationService.js` adalah satu-satunya file yang
+  boleh import Capacitor** (memenuhi Constraint "UI tidak boleh memanggil
+  Capacitor langsung") — komponen React tidak pernah menyentuh plugin. Policy
+  penjadwalan (task mana, jam berapa) ada di fungsi murni baru
+  `getScheduledReminders(tasks, now, offsetMs)` di `src/lib/reminder.js`
+  (`fireAt = deadline − offsetMs`, hanya `fireAt > now`), berdampingan dengan
+  `getDueSoonTasks` (banner) — keduanya `now`-injected, `getDueSoonTasks`
+  tidak diubah. Sinkronisasi lewat **satu `useEffect([tasks, reminderOffset])`**
+  di `App.jsx`: karena semua aksi task (complete/delete/edit/undo/bulk/recurring)
+  bermuara ke state `tasks`, satu efek ini menutup **semua** Business Rule §1–5
+  tanpa hook per-aksi. Strategi **cancel-all lalu reschedule-all** (offset
+  global → perubahan apa pun menjadwal-ulang semua): getPending → cancel →
+  schedule set baru. Karena set selalu dibangun ulang, **ID notifikasi cukup
+  sekuensial 1..N** (tanpa hash UUID→int, tanpa risiko tabrakan) dan "tanpa
+  duplikat" (Rule §5) terpenuhi secara struktural. Resync kedua saat
+  `visibilitychange` (bukan `@capacitor/app`, agar tak nambah dependency)
+  menutup edge case timezone/jam berubah/reboot. **Web = fallback**:
+  `Capacitor.isNativePlatform()` false → semua fungsi service no-op, banner
+  due-soon in-app yang sudah ada jadi fallback web-nya (sengaja TIDAK memakai
+  Notification API browser — konsisten keputusan sesi sebelumnya). UI izin:
+  saat native + offset≠off + izin ditolak, tampil banner "Open Settings"
+  (`LocalNotifications.openSettings()`) + panduan battery optimization dengan
+  tautan `https://dontkillmyapp.com` (Arch Notes). Permission diminta lazy
+  (hanya setelah user menyalakan reminder), lewat `ensurePermission()`.
+  Native: **scaffold `android/`** via `npx cap add android` +
+  `capacitor.config.json` (appId `com.todolistmodern.app`, webDir `dist`);
+  AndroidManifest ditambah `POST_NOTIFICATIONS`, `SCHEDULE_EXACT_ALARM`,
+  `USE_EXACT_ALARM`, `RECEIVE_BOOT_COMPLETED`; `schedule.allowWhileIdle: true`
+  memetakan ke `setExactAndAllowWhileIdle()`. **Dependency baru (disetujui
+  eksplisit):** `@capacitor/core`, `@capacitor/local-notifications`,
+  `@capacitor/android`, dev `@capacitor/cli`. Test baru untuk
+  `getScheduledReminders` di `reminder.test.js` (fireAt, past-fire dibuang,
+  completed/no-deadline dibuang, offset null). **Batas verifikasi jujur:** build
+  Android tidak dijalankan di sesi ini (mesin Windows tanpa JDK 17/Android
+  SDK) — logika (vitest) & jalur Web fallback (browser, nol error console)
+  terverifikasi; AC "notifikasi benar-benar muncul di device" adalah langkah
+  manual user (pasang Android Studio → `npx cap sync android` → run di
+  device/emulator). iOS **tidak dikerjakan** (butuh macOS). Yang sengaja di
+  luar scope sesuai spec Non-Goals: Push/FCM/APNs, Hybrid/Silent Push,
+  Notification History, Snooze, AI Reminder, Cloud Sync.
 
 - Reminder / pengingat in-app (local-only). Keputusan "Di luar scope" untuk
   pengingat/notifikasi **dibalik atas permintaan eksplisit user**. Sesi ini
@@ -443,18 +501,18 @@ ke user, lihat detail di bawah).
   baca data saat window ditutup) — layak dapat spec sendiri seperti Calendar/
   Recurring. Reminder engine (`src/lib/reminder.js`) sudah siap dipakai ulang
   di sini tanpa perubahan. Ditunda sampai diminta.
-- **Mobile background notification.** Dicatat dengan batas nyatanya, bukan
-  janji: TIDAK ada cara andal untuk app JS "hidup di background" mengecek
-  deadline sendiri — iOS/Android modern membunuh proses itu. Satu-satunya jalur
-  local-only adalah Capacitor Local Notifications (app **menitipkan alarm ke
-  OS** lalu boleh mati; kode app tidak jalan saat notifikasi muncul), dengan
-  konsekuensi: setiap mutasi deadline (edit/complete/delete/undo/bulk/recurring
-  generate) harus reschedule alarm OS, iOS berplafon 64 notifikasi pending per
-  app, dan Android OEM (battery optimization) boleh menunda/membatalkannya.
-  Notifikasi mobile yang benar-benar andal butuh **push server** — artinya
-  "local-only" gugur saat itu. User memilih tetap mengejar ini; keputusan
-  final ditunda sampai jalur di atas diterima eksplisit. Butuh platform ketiga
-  (Capacitor + build Android/iOS).
+- **Mobile background notification — jalur Android SUDAH dikerjakan** (lihat
+  entri "Local Notification (Capacitor)" di "Sudah jadi"): Capacitor Local
+  Notifications, app menitipkan alarm ke OS lalu boleh mati, reschedule
+  otomatis lewat satu `useEffect` di `App.jsx`. Yang **tersisa**: (1) build &
+  verifikasi Android di device nyata (butuh JDK 17 + Android SDK; belum ada di
+  mesin dev) — kode & manifest sudah siap, tinggal `npx cap sync android` lalu
+  run; (2) **iOS** (butuh macOS + Xcode; belum disentuh sama sekali); (3) batas
+  platform yang tetap berlaku: iOS berplafon 64 notifikasi pending per app, dan
+  Android OEM (battery optimization) boleh menunda/membatalkan alarm — panduan
+  dontkillmyapp.com sudah ditampilkan. Notifikasi yang benar-benar andal
+  (bukan best-effort) tetap butuh **push server**, dan itu menggugurkan
+  "local-only" — tetap di luar scope.
 
 ---
 

@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { REMINDER_OFFSETS, offsetMsFor, getDueSoonTasks } from "./reminder.js";
+import {
+  REMINDER_OFFSETS,
+  offsetMsFor,
+  getDueSoonTasks,
+  getScheduledReminders,
+} from "./reminder.js";
 
 // A fixed "now" so every case is deterministic; the engine never reads the clock
 // itself. 2026-07-17 12:00 local.
@@ -80,5 +85,45 @@ describe("getDueSoonTasks", () => {
       sooner,
       later,
     ]);
+  });
+});
+
+describe("getScheduledReminders", () => {
+  it("returns [] when the offset is null (reminders off)", () => {
+    const tasks = [task({ deadline: deadlineFromNow(2 * ONE_HOUR) })];
+    expect(getScheduledReminders(tasks, NOW, null)).toEqual([]);
+  });
+
+  it("computes fireAt as deadline minus the offset", () => {
+    // Deadline 2h out, remind 1h before -> fire 1h from now.
+    const t = task({ deadline: deadlineFromNow(2 * ONE_HOUR) });
+    const result = getScheduledReminders([t], NOW, ONE_HOUR);
+    expect(result).toHaveLength(1);
+    expect(result[0].task).toBe(t);
+    expect(result[0].fireAt.getTime()).toBe(NOW.getTime() + ONE_HOUR);
+  });
+
+  it("drops a reminder whose fire time has already passed", () => {
+    // Deadline 10 min out with a 1h offset -> fire time is 50 min in the past.
+    // The task is NOT overdue, but its reminder is: still excluded.
+    const t = task({ deadline: deadlineFromNow(10 * 60 * 1000) });
+    expect(getScheduledReminders([t], NOW, ONE_HOUR)).toEqual([]);
+  });
+
+  it("excludes completed tasks", () => {
+    const t = task({ completed: true, deadline: deadlineFromNow(2 * ONE_HOUR) });
+    expect(getScheduledReminders([t], NOW, ONE_HOUR)).toEqual([]);
+  });
+
+  it("excludes tasks without a deadline", () => {
+    const t = task({ deadline: null });
+    expect(getScheduledReminders([t], NOW, ONE_HOUR)).toEqual([]);
+  });
+
+  it("sorts results earliest-fire-first", () => {
+    const later = task({ deadline: deadlineFromNow(4 * ONE_HOUR) });
+    const sooner = task({ deadline: deadlineFromNow(2 * ONE_HOUR) });
+    const result = getScheduledReminders([later, sooner], NOW, ONE_HOUR);
+    expect(result.map((r) => r.task)).toEqual([sooner, later]);
   });
 });

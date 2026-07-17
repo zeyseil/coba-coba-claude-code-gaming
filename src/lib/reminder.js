@@ -52,3 +52,33 @@ export function getDueSoonTasks(tasks, now, offsetMs) {
     })
     .sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
 }
+
+// Which tasks should have an OS-level alarm, and at what instant it should fire:
+// fireAt = deadline - offsetMs, i.e. "remind me `offset` before it is due".
+//
+// This answers a different question from getDueSoonTasks, which is why both
+// exist. getDueSoonTasks asks "who is due soon RIGHT NOW" for the in-app banner
+// and so keeps looking at `deadline`. This asks "when should the OS wake up",
+// which is a moment in the future, and so looks at the fire time instead. The
+// two share the same exclusions (completed, no deadline, reminders off) because
+// they describe the same user-facing notion of a reminder.
+//
+// Fire times at or before `now` are dropped: an alarm for a moment that has
+// already passed would either fire instantly or be silently ignored by the OS.
+// This is the "Reminder lampau" edge case — a task whose deadline is still in
+// the future can already be past its fire time (deadline in 10 minutes with a
+// 1-hour offset), so this is not the same check as excluding overdue tasks.
+export function getScheduledReminders(tasks, now, offsetMs) {
+  if (offsetMs === null) return [];
+
+  const from = now.getTime();
+
+  return tasks
+    .filter((task) => !task.completed && task.deadline)
+    .map((task) => ({
+      task,
+      fireAt: new Date(new Date(task.deadline).getTime() - offsetMs),
+    }))
+    .filter(({ fireAt }) => fireAt.getTime() > from)
+    .sort((a, b) => a.fireAt - b.fireAt);
+}

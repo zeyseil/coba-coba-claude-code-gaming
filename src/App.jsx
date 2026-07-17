@@ -47,6 +47,12 @@ import {
   getStoredReminderOffset,
   setStoredReminderOffset,
 } from "./lib/reminderPreference";
+import {
+  isSupported as notificationsSupported,
+  ensurePermission,
+  syncNotifications,
+  openNotificationSettings,
+} from "./lib/notificationService";
 import Button from "./Button";
 
 // Lightweight, non-interactive clone shown under the pointer while a row is
@@ -133,6 +139,12 @@ export default function App() {
   const [reminderOffset, setReminderOffset] = useState(getStoredReminderOffset);
   const [remindersExpanded, setRemindersExpanded] = useState(false);
 
+  // OS notification permission status, only meaningful on a native device.
+  // "granted" | "denied" | "unsupported" | null (not yet checked). Drives the
+  // "open Settings" guidance banner. On web it stays "unsupported" and the
+  // banner never shows — the in-app due-soon banner is the web fallback.
+  const [notifPermission, setNotifPermission] = useState(null);
+
   // The New task form and the filter panel each live in a native <dialog>,
   // driven imperatively via these refs (showModal/close). No "isOpen" state:
   // the dialog element owns its own open state, focus trap, and Escape-to-close.
@@ -177,6 +189,53 @@ export default function App() {
   useEffect(() => {
     setStoredReminderOffset(reminderOffset);
   }, [reminderOffset]);
+
+  // Keep the OS-level notifications in step with the tasks and the reminder
+  // offset. This single effect is the only place that schedules anything: every
+  // task action (complete, delete, edit, undo, bulk, recurring-generate) already
+  // flows into `tasks`, so reacting to `tasks` covers all of them at once — no
+  // per-action hooks that could be forgotten. On web notificationsSupported() is
+  // false and syncNotifications is a no-op, so this is inert there.
+  //
+  // Permission is requested lazily: only once the user has actually turned
+  // reminders on (offset != "off"), never on a cold load with reminders off.
+  useEffect(() => {
+    if (!tasks) return; // still loading
+    if (!notificationsSupported()) return;
+
+    let cancelled = false;
+    (async () => {
+      if (reminderOffset !== "off") {
+        const status = await ensurePermission();
+        if (cancelled) return;
+        setNotifPermission(status);
+        if (status !== "granted") return; // can't schedule without permission
+      }
+      // Reminders off still runs sync — it cancels any previously scheduled set.
+      await syncNotifications(tasks, reminderOffset);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tasks, reminderOffset]);
+
+  // Re-sync when the app comes back to the foreground. The scheduled set is
+  // derived entirely from `deadline`, so recomputing it on resume repairs the
+  // "timezone changed" / "clock changed" / "device rebooted" edge cases without
+  // any special handling. visibilitychange (not @capacitor/app) so it needs no
+  // extra dependency and works in both the webview and the browser.
+  useEffect(() => {
+    if (!notificationsSupported()) return;
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && tasks) {
+        syncNotifications(tasks, reminderOffset);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [tasks, reminderOffset]);
 
   // One instant shared by every row this render; injected into getTaskStatus.
   const now = new Date();
@@ -1230,6 +1289,43 @@ export default function App() {
             {Math.floor(progress * 100)}%
           </span>
         </div>
+
+        {/* Notification-permission guidance. Only on a native device, and only
+            when reminders are on but the OS permission was refused — the OS
+            alarms can't be scheduled, so point the user at Settings to re-grant
+            it. On web notifPermission stays null/"unsupported" and this never
+            renders. The battery-optimization hint links dontkillmyapp.com
+            (Architecture Notes: Battery Optimization) because even a granted
+            permission can be throttled by aggressive OEM battery savers. */}
+        {notifPermission === "denied" && reminderOffset !== "off" && (
+          <div className="rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-muted animate-[fade-slide-in_150ms_ease-out]">
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0">
+                🔕 Notifications are turned off, so reminders can't be delivered.
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => openNotificationSettings()}
+              >
+                Open Settings
+              </Button>
+            </div>
+            <p className="mt-2 border-t border-border pt-2">
+              If reminders arrive late, your device's battery optimization may be
+              delaying them. See{" "}
+              <a
+                href="https://dontkillmyapp.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-text"
+              >
+                dontkillmyapp.com
+              </a>{" "}
+              for device-specific steps.
+            </p>
+          </div>
+        )}
 
         {/* Due-soon reminder banner. Same markup/animation as the undo bar.
             Computed from ALL tasks, so it shows in both List and Calendar and
