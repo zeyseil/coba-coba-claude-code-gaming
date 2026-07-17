@@ -37,11 +37,16 @@ import {
   deleteTemplate,
 } from "./lib/storage";
 import { computeNextDeadline, buildInstanceFromTemplate } from "./lib/recurringEngine";
-import { toISODeadline } from "./lib/deadline";
+import { toISODeadline, formatDeadline } from "./lib/deadline";
 import { getVisibleTasks } from "./lib/getVisibleTasks";
 import { getTaskStats } from "./lib/getTaskStats";
 import { sortTasks } from "./lib/sortTasks";
 import { getStoredSort, setStoredSort } from "./lib/sortPreference";
+import { REMINDER_OFFSETS, offsetMsFor, getDueSoonTasks } from "./lib/reminder";
+import {
+  getStoredReminderOffset,
+  setStoredReminderOffset,
+} from "./lib/reminderPreference";
 import Button from "./Button";
 
 // Lightweight, non-interactive clone shown under the pointer while a row is
@@ -121,6 +126,13 @@ export default function App() {
   // via its own module, so it survives reloads. Default "manual".
   const [sortBy, setSortBy] = useState(getStoredSort);
 
+  // Reminder offset: how far before a deadline a task counts as "due soon".
+  // A UI preference like sortBy — persisted via its own module, not storage.js.
+  // Default "off". remindersExpanded is ephemeral (never persisted): it only
+  // controls whether the banner lists the task titles.
+  const [reminderOffset, setReminderOffset] = useState(getStoredReminderOffset);
+  const [remindersExpanded, setRemindersExpanded] = useState(false);
+
   // The New task form and the filter panel each live in a native <dialog>,
   // driven imperatively via these refs (showModal/close). No "isOpen" state:
   // the dialog element owns its own open state, focus trap, and Escape-to-close.
@@ -162,6 +174,10 @@ export default function App() {
     setStoredSort(sortBy);
   }, [sortBy]);
 
+  useEffect(() => {
+    setStoredReminderOffset(reminderOffset);
+  }, [reminderOffset]);
+
   // One instant shared by every row this render; injected into getTaskStatus.
   const now = new Date();
   // Filter first, then sort, then render — two separate steps.
@@ -180,6 +196,12 @@ export default function App() {
   const total = tasks ? tasks.length : 0;
   const completed = tasks ? tasks.filter((t) => t.completed).length : 0;
   const progress = total === 0 ? 0 : completed / total; // float 0..1; 0 when empty
+
+  // Due-soon reminders: computed from ALL tasks (like progress), not `visible`,
+  // so an active filter can't hide a reminder. Reuses the same `now` instant.
+  const dueSoon = tasks
+    ? getDueSoonTasks(tasks, now, offsetMsFor(reminderOffset))
+    : [];
 
   // A filter is active when any dimension deviates from its default. Drives the
   // "Showing X of Y" status line only.
@@ -290,19 +312,28 @@ export default function App() {
   // Move the task at index `from` to index `to` within the visible list. Since
   // reorder is gated to the unfiltered manual list, `visible` is the full task
   // set in order, so its ids form the complete permutation we hand to storage.
+  //
+  // `tasks` is reordered optimistically, in the same synchronous tick as
+  // handleDragEnd's setActiveId(null), rather than waiting on the storage
+  // round-trip. SortableContext derives its item order from `visible` (from
+  // `tasks`), so if that reorder only landed after the await below, @dnd-kit
+  // would compute its drop animation against the still-old order — the
+  // dragged row would visibly animate back to its pre-drag slot, then jump to
+  // the right place once the state update finally arrived.
   async function handleReorder(from, to) {
     if (from === to) return; // dropping onto itself is a no-op
     setLastDeleted(null); // closes the undo window
+    const reordered = [...visible];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(to, 0, moved);
+    const next = reordered.map((task, index) => ({ ...task, order: index }));
+    setTasks(next);
     try {
-      const ids = visible.map((t) => t.id);
-      const next = [...ids];
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      await reorderTasks(next);
+      await reorderTasks(next.map((t) => t.id));
       setError(null);
-      await refresh();
     } catch (err) {
       setError(String(err?.message ?? err));
+      await refresh(); // roll back the optimistic order to match storage
     }
   }
 
@@ -638,6 +669,22 @@ export default function App() {
               </select>
             </label>
           )}
+          {/* Reminder offset is relevant in both List and Calendar (the banner
+              shows in both), so unlike Sort By it is not gated on activeView. */}
+          <label className="flex items-center gap-1.5 text-sm text-text">
+            Remind
+            <select
+              value={reminderOffset}
+              onChange={(e) => setReminderOffset(e.target.value)}
+              className="min-h-11 sm:min-h-0 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              {REMINDER_OFFSETS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {error && (
@@ -1183,6 +1230,44 @@ export default function App() {
             {Math.floor(progress * 100)}%
           </span>
         </div>
+
+        {/* Due-soon reminder banner. Same markup/animation as the undo bar.
+            Computed from ALL tasks, so it shows in both List and Calendar and
+            is unaffected by filters. Expanding lists the task titles — a
+            summary, not a third view, so it renders plain <li>, not TaskRow. */}
+        {dueSoon.length > 0 && (
+          <div className="rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-muted animate-[fade-slide-in_150ms_ease-out]">
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate">
+                ⏰ {dueSoon.length}{" "}
+                {dueSoon.length === 1 ? "task" : "tasks"} due soon
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setRemindersExpanded((v) => !v)}
+                aria-expanded={remindersExpanded}
+              >
+                {remindersExpanded ? "Hide" : "Show"}
+              </Button>
+            </div>
+            {remindersExpanded && (
+              <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
+                {dueSoon.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-center justify-between gap-3"
+                  >
+                    <span className="min-w-0 truncate text-text">{t.title}</span>
+                    <span className="shrink-0 tabular-nums">
+                      {formatDeadline(t.deadline)}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {/* Status line, separate from the progress bar. Single source of the
             loading / no-tasks / showing-count status. */}

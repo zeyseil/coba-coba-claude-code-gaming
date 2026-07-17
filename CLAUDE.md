@@ -57,7 +57,12 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-17 (sesi kedua hari ini: warna semantik untuk tombol Complete/
+2026-07-17 (sesi ketiga hari ini: reminder/pengingat in-app local-only —
+engine murni `reminder.js` + modul preferensi `reminderPreference.js` +
+banner due-soon + dropdown offset di `App.jsx`, plus vitest sebagai test
+pertama di repo; keputusan "pengingat di luar scope" dibalik atas permintaan
+eksplisit, lihat entri "Reminder / pengingat in-app" di bawah. Sesi kedua
+hari ini: warna semantik untuk tombol Complete/
 Delete/Uncomplete — 3 pasang token warna baru, lihat entri "Warna semantik
 tombol aksi" di bawah. Sesi pertama hari ini: perapian interaksi UI — touch
 target checkbox
@@ -79,6 +84,37 @@ kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi eksplisit
 ke user, lihat detail di bawah).
 
 ## Sudah jadi
+
+- Reminder / pengingat in-app (local-only). Keputusan "Di luar scope" untuk
+  pengingat/notifikasi **dibalik atas permintaan eksplisit user**. Sesi ini
+  **tidak** membangun wrapper apa pun (tidak ada Electron/Tauri, Capacitor,
+  Notification API, service worker) — hanya lapisan logika + tampilan in-app,
+  karena itu bagian yang bernilai di semua skenario wrapper masa depan dan
+  bisa dipakai ulang tanpa perubahan. Engine murni di `src/lib/reminder.js`
+  (`REMINDER_OFFSETS`, `offsetMsFor`, `getDueSoonTasks`) mengikuti pola
+  `taskStatus.js`/`recurringEngine.js`: no I/O, `now` di-inject caller.
+  **Offset global (bukan per-task)** → tidak ada field baru di model Task,
+  tidak ada bump schema (tetap v4), `storage.js` tidak disentuh — "due soon"
+  diturunkan sepenuhnya dari `task.deadline` yang sudah ada. Window =
+  `now <= deadline <= now + offset`. **Keputusan desain: task overdue TIDAK
+  masuk banner** (sudah punya indikator "⚠ Overdue" sendiri; menjaga
+  overdue & due-soon tegak lurus seperti Status vs Tanggal di filter);
+  task completed juga tidak pernah due soon. Offset **bisa diatur user**
+  lewat dropdown "Remind" (Off / 1 jam / 1 hari / 3 hari), dipersist lewat
+  modul preferensi sendiri `src/lib/reminderPreference.js` (pola identik
+  `sortPreference.js` — preferensi UI tidak lewat `storage.js`). UI = banner
+  ringkas dekat progress bar (markup + animasi `fade-slide-in` sama seperti
+  undo bar), bisa di-expand untuk menampilkan judul + deadline task; dihitung
+  dari **seluruh `tasks`** (bukan `visible`) memakai `const now` yang sudah
+  ada di blok derived `App.jsx` — **tanpa timer/interval/state waktu baru**,
+  jadi banner refresh natural tiap render. Banner + dropdown tampil di List
+  maupun Calendar (offset relevan di keduanya, jadi tidak di-gate
+  `activeView` seperti Sort By). **Vitest ditambahkan** sebagai devDependency
+  (disetujui eksplisit — CLAUDE.md wajibkan tanya; ini test pertama di repo):
+  `src/lib/reminder.test.js` menguji batas window inklusif, exclusion
+  overdue/completed/no-deadline, offset null, dan urutan hasil. Script baru
+  `npm run test` (`vitest run`), environment node default (tanpa
+  jsdom/testing-library — yang diuji fungsi murni).
 
 - Warna semantik untuk tombol aksi (`Button.jsx`): Complete = hijau, Delete =
   merah, Uncomplete = abu-abu (beda dari abu-abu chip subtask). Sebelumnya
@@ -400,6 +436,25 @@ ke user, lihat detail di bawah).
   active/paused yang bisa di-toggle) — ditunda sampai diminta.
 - Filter "Recurring only" / bulk action recurring di `SelectionBar` —
   ditunda sampai diminta.
+- **Desktop wrapper (Electron/Tauri): system tray + autostart Windows +
+  notifikasi native**, supaya pengingat muncul tanpa membuka browser. Feasible
+  dan sesuai visi user, tapi ini proyek tersendiri (butuh build pipeline kedua
+  + memindahkan penyimpanan keluar dari localStorage karena proses tray perlu
+  baca data saat window ditutup) — layak dapat spec sendiri seperti Calendar/
+  Recurring. Reminder engine (`src/lib/reminder.js`) sudah siap dipakai ulang
+  di sini tanpa perubahan. Ditunda sampai diminta.
+- **Mobile background notification.** Dicatat dengan batas nyatanya, bukan
+  janji: TIDAK ada cara andal untuk app JS "hidup di background" mengecek
+  deadline sendiri — iOS/Android modern membunuh proses itu. Satu-satunya jalur
+  local-only adalah Capacitor Local Notifications (app **menitipkan alarm ke
+  OS** lalu boleh mati; kode app tidak jalan saat notifikasi muncul), dengan
+  konsekuensi: setiap mutasi deadline (edit/complete/delete/undo/bulk/recurring
+  generate) harus reschedule alarm OS, iOS berplafon 64 notifikasi pending per
+  app, dan Android OEM (battery optimization) boleh menunda/membatalkannya.
+  Notifikasi mobile yang benar-benar andal butuh **push server** — artinya
+  "local-only" gugur saat itu. User memilih tetap mengejar ini; keputusan
+  final ditunda sampai jalur di atas diterima eksplisit. Butuh platform ketiga
+  (Capacitor + build Android/iOS).
 
 ---
 
@@ -554,6 +609,22 @@ Satu sumber kebenaran. Jangan sebar logika filter ke komponen.
 - Status/completed task **tidak otomatis berubah** karena semua/sebagian
   subtask selesai — keduanya independen (task punya `completed` sendiri).
 
+## Reminder / pengingat
+
+- **Offset global**, bukan per-task: satu ambang waktu berlaku untuk semua
+  task. Konsekuensinya tidak ada field baru di model Task — "due soon"
+  diturunkan dari `deadline` yang sudah ada.
+- Sebuah task **due soon** jika `now <= deadline <= now + offset`. Task
+  completed dan task tanpa deadline tidak pernah due soon.
+- **Task overdue TIDAK termasuk due soon** — overdue adalah status waktu
+  tersendiri (punya indikator "⚠ Overdue"), tegak lurus dengan due-soon,
+  sama seperti Status vs Tanggal di filter.
+- Offset bisa diatur user (Off / 1 jam / 1 hari / 3 hari), dipersist sebagai
+  preferensi UI (tidak lewat `storage.js`).
+- Logika diselesaikan di satu fungsi murni `getDueSoonTasks(tasks, now,
+  offsetMs)` (`src/lib/reminder.js`), `now` di-inject. Local-only: tidak ada
+  Notification API / push / service worker.
+
 ## Dark mode
 
 - Bukan fitur tempelan. Semua warna pakai token/CSS variable sejak awal.
@@ -569,12 +640,13 @@ Harus nyaman di HP, tablet, laptop. Desain mobile-first.
 # Di luar scope
 
 Jangan bangun ini kecuali saya minta eksplisit:
-pengingat/notifikasi, login,
-sinkronisasi database.
+login, sinkronisasi database.
 
 (Kalender dan Recurring Task sudah dikerjakan — lihat "Status implementasi"
 di atas — sesuai `.claude/Engineering-Spec-Calendar-View.md` dan
-`.claude/Engineering-Spec-Recurring-Task.md`.)
+`.claude/Engineering-Spec-Recurring-Task.md`. Pengingat/notifikasi in-app
+juga sudah dikerjakan — lihat "Reminder / pengingat in-app" di "Sudah jadi".
+Wrapper desktop/mobile untuk notifikasi di luar browser masih di Backlog.)
 
 ---
 
