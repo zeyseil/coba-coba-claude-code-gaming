@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">To-Do List Modern</string>
+    <string name="title_activity_main">To-Do List Modern</string>
+    <string name="package_name">com.todolistmodern.app</string>
+    <string name="custom_url_scheme">com.todolistmodern.app</string>
+</resources>
