@@ -57,7 +57,13 @@ Semua fungsi di `storage.js` ditulis dengan asumsi **suatu saat jadi async**.
 # Status implementasi
 
 Catatan status (bukan bagian spec — spec di bawah tidak berubah). Diperbarui
-2026-07-17 (sesi keempat hari ini: OS-level Local Notification via Capacitor —
+2026-07-17 (sesi kelima hari ini: Desktop Wrapper via Tauri v2 — tray +
+scheduler reminder di proses Rust + autostart Windows, sehingga reminder muncul
+walau window ditutup; `storage.js` TIDAK disentuh karena tray hanya butuh
+`[{title, fireAt}]`, bukan database task — ini mengoreksi klaim lama di Backlog
+bahwa fitur ini butuh pindah dari localStorage; `App.jsx` juga nol perubahan.
+Lihat entri "Desktop Wrapper (Tauri)" di bawah. Sesi keempat hari ini: OS-level
+Local Notification via Capacitor —
 NotificationService sebagai satu-satunya pemanggil Capacitor, fungsi murni
 baru `getScheduledReminders` di `reminder.js`, sync via satu `useEffect` di
 `App.jsx`, scaffold native `android/` + AndroidManifest; mengikuti
@@ -90,6 +96,102 @@ kontrak kaku — beberapa gap di spec diselesaikan lewat konfirmasi eksplisit
 ke user, lihat detail di bawah).
 
 ## Sudah jadi
+
+- Desktop Wrapper (Tauri v2) — reminder muncul di Windows walau window ditutup.
+  Melanjutkan Local Notification: Capacitor menutup Android, ini menutup desktop.
+  **Tauri, bukan Electron** — dipilih user setelah perbandingan eksplisit
+  (rekomendasi saya waktu itu Electron, karena proses main-nya JavaScript
+  sehingga bisa direview user sendiri sesuai baris 1 CLAUDE.md; user memilih
+  Tauri sadar akan biayanya: Rust di proses main + toolchain MSVC). Ternyata
+  Rust + MSVC + WebView2 **sudah terpasang** di mesin dev, jadi tidak ada
+  pengulangan derita toolchain sesi Android.
+  **Keputusan terpenting: `storage.js` TIDAK disentuh sama sekali** — ini
+  membalik klaim lama di Backlog bahwa fitur ini butuh memindahkan penyimpanan
+  keluar dari localStorage. Klaim itu salah: proses tray tidak butuh database
+  task, ia cuma butuh hasil `getScheduledReminders`, yaitu `[{title, fireAt}]`.
+  Task tidak bisa berubah tanpa window terbuka, jadi renderer cukup mendorong
+  daftar itu lewat IPC tiap kali berubah dan Rust menyimpannya ke satu file JSON
+  kecil (`%APPDATA%\com.todolistmodern.desktop\reminders.json`). Cache tidak
+  bisa basi. Konsekuensi: tidak ada field baru di Task, tidak ada bump schema
+  (tetap v4), dan **`App.jsx` nol perubahan** — efek `[tasks, reminderOffset]`
+  yang sudah ada otomatis menutup semua aksi task, dan banner "open Settings"
+  otomatis inert karena permission desktop tidak pernah `"denied"`. Ini buah
+  dari seam yang sudah benar di sesi Capacitor.
+  Arsitektur: **`notificationService.js` tetap satu-satunya file yang tahu soal
+  platform** — identitasnya melebar dari Capacitor-aware jadi platform-aware
+  lewat `platform()` → `"capacitor"` | `"tauri"` | `"web"` (Tauri v2 dideteksi
+  dari global `window.__TAURI_INTERNALS__`). Policy penjadwalan **dipakai ulang
+  100%**: `getScheduledReminders` di `reminder.js` tidak diubah satu baris pun
+  dan melayani Android maupun desktop. Di sisi Rust, satu-satunya aturan waktu
+  ada di fungsi murni `partition_due(reminders, now_ms)`
+  (`src-tauri/src/scheduler.rs`), terpisah dari Tauri supaya bisa dites;
+  `lib.rs` cuma plumbing.
+  **Polling, bukan timer per-reminder**: satu thread `std::thread` yang tidur
+  30 detik lalu memeriksa `fire_at <= now_ms`. Ini sengaja — timer yang diset
+  berjam-jam ke depan hilang saat mesin sleep, meleset saat jam/timezone
+  berubah, dan diam-diam salah di atas plafon ~24 hari. Polling cuma "sadar" di
+  tick berikutnya. Karena itu **tidak perlu power-monitor API** (Tauri tidak
+  punya bawaannya) — sleep/resume tertangani gratis. Reminder yang terlewat saat
+  mesin tidur **fire telat, bukan dibuang** (konsisten `allowWhileIdle` Android).
+  Sengaja **tanpa `tokio`** (thread biasa, tidak ada async lain di app ini) dan
+  **tanpa `chrono`**: `fireAt` dikirim sebagai epoch millis (`fireAt.getTime()`),
+  bukan ISO string, sehingga Rust tidak pernah mem-parse tanggal dan aturannya
+  jadi perbandingan integer.
+  Tray: Open / "Start with Windows" (CheckMenuItem) / Quit. **Close = hide, bukan
+  quit** (`CloseRequested` → `prevent_close` + `hide`) — kalau close mengakhiri
+  proses, seluruh premis fitur ini gugur. `tauri-plugin-single-instance` dipakai
+  karena autostart bisa balapan dengan launch manual, dan dua salinan akan
+  menembakkan tiap reminder dua kali. Toggle autostart membaca balik
+  `is_enabled()` setelah menulis, bukan mempercayai centangnya sendiri — checkbox
+  yang berbohong lebih buruk daripada tidak ada.
+  **Batas platform yang jujur: Windows TIDAK punya padanan `AlarmManager`.**
+  Tidak ada alarm OS yang bisa dititipi lalu app boleh mati. Prosesnya **wajib
+  hidup**, jadi tray + autostart di sini bukan pelengkap melainkan syarat mati —
+  beda mendasar dari Android yang benar-benar menitipkan alarm ke OS.
+  **Packaging dikerjakan** (membalik keputusan awal "tanpa packaging", yang
+  diambil di konteks Electron): toast Windows butuh AppUserModelID terdaftar
+  lewat shortcut Start Menu, dan binary `tauri dev` mentah tidak punya itu —
+  terbukti terukur, `HKCU\Software\Classes\AppUserModelId\com.todolistmodern.desktop`
+  kosong sebelum install. Autostart juga butuh binary stabil, bukan
+  `target/debug/`. Bundler Tauri bawaan dan binary build lokal tidak kena
+  SmartScreen, jadi kedua keberatan asli terhadap packaging tidak berlaku.
+  Identifier `com.todolistmodern.desktop` sengaja **beda** dari Capacitor
+  `com.todolistmodern.app` — app terpisah, AUMID terpisah.
+  `vite.config.js` cuma dapat `server.strictPort: true` (nol dampak ke
+  `vite build`, jadi build Android aman): tanpa itu vite diam-diam pindah port
+  saat 5173 terpakai sementara `devUrl` menunjuk 5173, sehingga `tauri dev`
+  memuat app lain yang menyamar sebagai app ini — sempat benar-benar terjadi
+  saat sesi ini.
+  **Dependency baru (disetujui eksplisit):** npm `@tauri-apps/api`, dev
+  `@tauri-apps/cli`; Cargo `tauri` (feature `tray-icon`),
+  `tauri-plugin-notification`, `tauri-plugin-autostart`,
+  `tauri-plugin-single-instance`, `serde`, `serde_json`. `tauri-plugin-log` +
+  `log` yang ditambahkan `tauri init` **dibuang** — tidak ditanyakan, dan
+  `println!` sudah cukup. Test runner kedua: `npm run test:rust` (`cargo test`,
+  8 test untuk `partition_due` termasuk yang mengunci wire format `fireAt`);
+  `npm run test` tetap vitest 18 test.
+  **Verifikasi — SUDAH terbukti otomatis:** (1) rantai IPC penuh, di build dev
+  maupun release (`reminders.json` dihapus → app dijalankan → file lahir kembali
+  berisi `[]`, yang hanya mungkin kalau renderer termuat → `platform()`
+  mengenali Tauri → `invoke` sampai ke command Rust → cache ditulis); (2) tick
+  loop menembakkan reminder **tanpa renderer sama sekali** — vite dimatikan
+  supaya renderer gagal memuat dan tidak bisa menimpa cache, reminder disuntik
+  dengan `fireAt` 40 detik ke depan, lalu cache terkuras sendiri jadi `[]` tepat
+  di tick pertama; ini persis skenario autostart-ke-tray; (3) 8 test `cargo test`
+  untuk `partition_due` + 18 test vitest tetap hijau; (4) AUMID: terukur
+  **kosong** sebelum install, dan setelah install shortcut Start Menu membawa
+  `System.AppUserModel.ID = com.todolistmodern.desktop` — ini mengonfirmasi
+  diagnosis bahwa `tauri dev` mentah tidak bisa menampilkan toast.
+  **BELUM terverifikasi (butuh mata & klik user, bukan sesuatu yang bisa
+  diotomasi):** toast yang benar-benar TERLIHAT di layar (pipeline-nya terbukti,
+  tampilannya belum), perilaku tray (Open / close-to-hide / Quit), dan toggle
+  autostart beserta entri registry-nya. Alasannya: window native tidak bisa
+  dipotret dan menu tray tidak bisa diklik dari sini, dan tidak ada cara
+  menyuntik task ke localStorage WebView2 dari luar (LevelDB), sehingga tidak
+  ada jalan membuat renderer menghasilkan reminder sungguhan tanpa tangan user.
+  Yang di luar scope: macOS/Linux, code signing, WinRT
+  `ScheduledToastNotification` (satu-satunya jalan agar reminder fire dengan
+  proses mati; butuh binding native).
 
 - Local Notification (Capacitor) — reminder tingkat OS, local-only. Melanjutkan
   reminder in-app: banner in-app hanya terlihat saat app dibuka; fitur ini
@@ -507,13 +609,14 @@ ke user, lihat detail di bawah).
   active/paused yang bisa di-toggle) — ditunda sampai diminta.
 - Filter "Recurring only" / bulk action recurring di `SelectionBar` —
   ditunda sampai diminta.
-- **Desktop wrapper (Electron/Tauri): system tray + autostart Windows +
-  notifikasi native**, supaya pengingat muncul tanpa membuka browser. Feasible
-  dan sesuai visi user, tapi ini proyek tersendiri (butuh build pipeline kedua
-  + memindahkan penyimpanan keluar dari localStorage karena proses tray perlu
-  baca data saat window ditutup) — layak dapat spec sendiri seperti Calendar/
-  Recurring. Reminder engine (`src/lib/reminder.js`) sudah siap dipakai ulang
-  di sini tanpa perubahan. Ditunda sampai diminta.
+- **Desktop wrapper — SUDAH DIKERJAKAN** (Tauri v2; lihat entri "Desktop Wrapper
+  (Tauri v2)" di "Sudah jadi"). Catatan lama di sini memperkirakan fitur ini
+  butuh "memindahkan penyimpanan keluar dari localStorage karena proses tray
+  perlu baca data saat window ditutup" — **itu terbukti salah**: tray tidak
+  butuh database task, cuma `[{title, fireAt}]`, jadi `storage.js` tidak
+  disentuh sama sekali. Perkiraan bahwa reminder engine bisa dipakai ulang tanpa
+  perubahan **terbukti benar**: `reminder.js` nol perubahan. Sisa yang memang
+  masih terbuka: macOS/Linux (butuh mesin lain, perilaku tray/autostart beda).
 - **Mobile background notification — jalur Android SUDAH dikerjakan** (lihat
   entri "Local Notification (Capacitor)" di "Sudah jadi"): Capacitor Local
   Notifications, app menitipkan alarm ke OS lalu boleh mati, reschedule
@@ -717,7 +820,10 @@ login, sinkronisasi database.
 di atas — sesuai `.claude/Engineering-Spec-Calendar-View.md` dan
 `.claude/Engineering-Spec-Recurring-Task.md`. Pengingat/notifikasi in-app
 juga sudah dikerjakan — lihat "Reminder / pengingat in-app" di "Sudah jadi".
-Wrapper desktop/mobile untuk notifikasi di luar browser masih di Backlog.)
+Wrapper untuk notifikasi di luar browser juga sudah dikerjakan di kedua sisi:
+Android lewat Capacitor, Windows desktop lewat Tauri — lihat entri
+"Local Notification (Capacitor)" dan "Desktop Wrapper (Tauri v2)". Yang tersisa
+cuma iOS dan macOS/Linux, keduanya terhalang ketersediaan mesin.)
 
 ---
 
